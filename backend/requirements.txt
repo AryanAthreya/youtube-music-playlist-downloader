@@ -1,0 +1,28 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Backend Python Dependencies
+#
+# PINNED VERSIONS — yt-dlp ecosystem (must be updated together):
+#   yt-dlp==2026.8.19   YouTube extractor
+#   yt-dlp-ejs==0.8.0   External JS solver (coupled to yt-dlp version)
+#   deno v2.9.6          JS runtime (pinned in Dockerfile)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── yt-dlp ecosystem (tightly coupled — update together) ──────────────────
+yt-dlp==2026.8.19
+yt-dlp-ejs==0.8.0
+
+# ── Web framework ─────────────────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+websockets==13.1
+
+# ── Validation & config ───────────────────────────────────────────────────
+pydantic==2.9.2
+pydantic-settings==2.5.2
+
+# ── Async file I/O ────────────────────────────────────────────────────────
+aiofiles==24.1.0
+
+# ── Testing ───────────────────────────────────────────────────────────────
+pytest==8.3.3
+pytest-asyncio==0.24.0
