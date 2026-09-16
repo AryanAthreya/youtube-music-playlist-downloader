@@ -46,7 +46,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm --prefix frontend ci
+          npm --prefix frontend install
 
       - name: Run Next.js Build
         run: |
