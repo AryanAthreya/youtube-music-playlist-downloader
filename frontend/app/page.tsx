@@ -10,6 +10,7 @@ import { FileList } from "@/components/FileList";
 import { SearchResults } from "@/components/SearchResults";
 import { NowPlayingSection } from "@/components/NowPlayingSection";
 import { BottomNavBar } from "@/components/BottomNavBar";
+import { DownloadCompleteNotification } from "@/components/DownloadCompleteNotification";
 import { fetchInfo, searchYouTube, createDownload, deleteJob, getFileUrl, getFiles } from "@/lib/api";
 import { createJobWebSocket } from "@/lib/websocket";
 import type {
@@ -39,6 +40,10 @@ export default function HomePage() {
   const [historyCount, setHistoryCount] = useState<number>(0);
   const [currentPlayingFile, setCurrentPlayingFile] = useState<FileInfo | null>(null);
   const [playerQueue, setPlayerQueue] = useState<FileInfo[]>([]);
+  const [downloadNotification, setDownloadNotification] = useState<{
+    jobId: string;
+    frame: WebSocketFrame;
+  } | null>(null);
   const autoDownloadedJobRef = useRef<string | null>(null);
 
   // Touch swipe support for switching tabs on mobile
@@ -104,9 +109,9 @@ export default function HomePage() {
 
   // ── Auto trigger browser download when job is done ────────────────────────
   useEffect(() => {
-    if (state.phase === "done" && state.jobId && autoDownloadedJobRef.current !== state.jobId) {
-      autoDownloadedJobRef.current = state.jobId;
-      const downloadUrl = getFileUrl(state.jobId);
+    if (downloadNotification && downloadNotification.jobId && autoDownloadedJobRef.current !== downloadNotification.jobId) {
+      autoDownloadedJobRef.current = downloadNotification.jobId;
+      const downloadUrl = getFileUrl(downloadNotification.jobId);
       
       // Trigger background download so it shows in Brave/Chrome downloads tray without navigating
       try {
@@ -123,7 +128,7 @@ export default function HomePage() {
         console.warn("Auto-download trigger:", err);
       }
     }
-  }, [state]);
+  }, [downloadNotification]);
 
   // ── URL Fetch or Search ───────────────────────────────────────────────────
 
@@ -200,7 +205,8 @@ export default function HomePage() {
             });
           },
           (frame) => {
-            setState({ phase: "done", jobId: job_id, frame });
+            setDownloadNotification({ jobId: job_id, frame });
+            setState({ phase: "idle" });
             setWsHandle(null);
             setHistoryCount((c) => c + 1);
           },
@@ -443,58 +449,6 @@ export default function HomePage() {
                 onCancel={handleCancel}
               />
             )}
-
-            {/* Done Banner with Prominent Download & Browser Trigger */}
-            {state.phase === "done" && (
-              <div className="glass-panel rounded-2xl border border-emerald-500/30 bg-emerald-950/20 p-6 sm:p-8 text-center space-y-5 animate-in zoom-in-95 duration-200">
-                <div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-3xl">
-                  ✓
-                </div>
-                
-                <div className="space-y-1.5">
-                  <h3 className="text-xl sm:text-2xl font-bold text-white">
-                    {state.frame.status === "partial" ? "Partially Completed" : "Download Complete!"}
-                  </h3>
-                  <p className="text-xs sm:text-sm text-emerald-300 font-medium">
-                    Saved directly to your local computer: <code className="bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800/50 font-mono text-xs">downloads/completed</code>
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    Browser download triggered! Press <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-white/10 font-mono text-gray-300">Ctrl + J</kbd> in Brave/Chrome to open your browser downloads tray.
-                  </p>
-                </div>
-
-                {/* Direct Action Buttons */}
-                <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-                  <a
-                    href={getFileUrl(state.jobId)}
-                    download
-                    className="inline-flex items-center gap-2 px-6 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-xl shadow-lg shadow-emerald-500/25 active:scale-95 transition-all text-sm sm:text-base"
-                  >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    <span>Save to Browser Downloads</span>
-                  </a>
-
-                  <button
-                    onClick={() => setActiveTab("history")}
-                    className="inline-flex items-center gap-2 px-5 py-3.5 glass-card hover:bg-white/10 text-white font-semibold rounded-xl active:scale-95 transition-all text-sm"
-                  >
-                    <svg className="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                    </svg>
-                    <span>View in History Library →</span>
-                  </button>
-                </div>
-
-                <button
-                  onClick={handleReset}
-                  className="block mx-auto text-xs text-gray-400 hover:text-white transition-colors pt-2"
-                >
-                  ← Download another video
-                </button>
-              </div>
-            )}
           </div>
         )}
 
@@ -524,6 +478,19 @@ export default function HomePage() {
           </div>
         )}
       </div>
+
+      {/* Download Complete Pop-Up (PC) & Header Notification (Mobile) with Translucent Background */}
+      {downloadNotification && (
+        <DownloadCompleteNotification
+          jobId={downloadNotification.jobId}
+          frame={downloadNotification.frame}
+          onDismiss={() => setDownloadNotification(null)}
+          onViewInLibrary={() => {
+            setDownloadNotification(null);
+            setActiveTab("history");
+          }}
+        />
+      )}
 
       {/* Mobile Bottom Navigation Bar */}
       <BottomNavBar
