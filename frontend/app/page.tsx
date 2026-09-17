@@ -8,10 +8,11 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { FileList } from "@/components/FileList";
 import { SearchResults } from "@/components/SearchResults";
-import { NowPlayingSection } from "@/components/NowPlayingSection";
+import { NowPlayingSection, type NowPlayingSectionHandle } from "@/components/NowPlayingSection";
 import { BottomNavBar } from "@/components/BottomNavBar";
 import { DownloadCompleteNotification } from "@/components/DownloadCompleteNotification";
 import { RecentAndActiveSection } from "@/components/RecentAndActiveSection";
+import { MiniPlayerBar } from "@/components/MiniPlayerBar";
 import { fetchInfo, searchYouTube, createDownload, deleteJob, getFileUrl, getFiles } from "@/lib/api";
 import { createJobWebSocket } from "@/lib/websocket";
 import type {
@@ -42,6 +43,8 @@ export default function HomePage() {
   const [recentFiles, setRecentFiles] = useState<FileInfo[]>([]);
   const [currentPlayingFile, setCurrentPlayingFile] = useState<FileInfo | null>(null);
   const [playerQueue, setPlayerQueue] = useState<FileInfo[]>([]);
+  const [isPlayerPlaying, setIsPlayerPlaying] = useState<boolean>(true);
+  const playerHandleRef = useRef<NowPlayingSectionHandle | null>(null);
   const [downloadNotification, setDownloadNotification] = useState<{
     jobId: string;
     frame: WebSocketFrame;
@@ -263,7 +266,9 @@ export default function HomePage() {
     <main
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
-      className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100 flex flex-col justify-between pb-20 md:pb-0 select-none md:select-auto"
+      className={`min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100 flex flex-col justify-between ${
+        currentPlayingFile && activeTab !== "player" ? "pb-32 md:pb-6" : "pb-20 md:pb-0"
+      } select-none md:select-auto`}
     >
       {/* Background ambient lighting */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
@@ -485,21 +490,31 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* MAIN TAB: PLAYER */}
-        {activeTab === "player" && (
-          <div className="space-y-6 animate-in fade-in duration-200">
-            <NowPlayingSection
-              id="now-playing-section"
-              currentFile={currentPlayingFile}
-              playlist={playerQueue}
-              onSelectTrack={(file) => setCurrentPlayingFile(file)}
-              onPlayNext={handlePlayNext}
-              onPlayPrev={handlePlayPrev}
-              onGoToHistory={() => setActiveTab("history")}
-            />
-          </div>
-        )}
+        {/* MAIN TAB: PLAYER (Persistently mounted in DOM so audio/video playback never stops across tab changes) */}
+        <div className={activeTab === "player" ? "space-y-6 animate-in fade-in duration-200" : "hidden"}>
+          <NowPlayingSection
+            ref={playerHandleRef}
+            id="now-playing-section"
+            currentFile={currentPlayingFile}
+            playlist={playerQueue}
+            onSelectTrack={(file) => setCurrentPlayingFile(file)}
+            onPlayNext={handlePlayNext}
+            onPlayPrev={handlePlayPrev}
+            onGoToHistory={() => setActiveTab("history")}
+            onPlaybackStateChange={(playing) => setIsPlayerPlaying(playing)}
+          />
+        </div>
       </div>
+
+      {/* Floating Mini Player Bar (Visible on Downloader & Library tabs during playback) */}
+      {activeTab !== "player" && currentPlayingFile && (
+        <MiniPlayerBar
+          currentFile={currentPlayingFile}
+          isPlaying={isPlayerPlaying}
+          onTogglePlayPause={() => playerHandleRef.current?.togglePlayPause()}
+          onOpenPlayer={() => setActiveTab("player")}
+        />
+      )}
 
       {/* Download Complete Pop-Up (PC) & Header Notification (Mobile) with Translucent Background */}
       {downloadNotification && (
