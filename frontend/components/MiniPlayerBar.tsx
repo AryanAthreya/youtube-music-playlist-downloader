@@ -1,6 +1,7 @@
 "use client";
 import type { FileInfo } from "@/lib/types";
 import { resolveMediaUrl } from "@/lib/api";
+import { useTheme } from "@/context/ThemeContext";
 
 interface MiniPlayerBarProps {
   currentFile: FileInfo | null;
@@ -15,12 +16,17 @@ export function MiniPlayerBar({
   onTogglePlayPause,
   onOpenPlayer,
 }: MiniPlayerBarProps) {
+  const { config } = useTheme();
   if (!currentFile) return null;
 
   return (
     <div
       onClick={onOpenPlayer}
-      className="fixed bottom-16 left-3 right-3 z-40 md:bottom-6 md:right-6 md:left-auto md:w-80 bg-zinc-950/90 backdrop-blur-2xl border border-white/15 rounded-2xl p-2.5 shadow-2xl shadow-black/80 flex items-center justify-between gap-3 cursor-pointer hover:border-white/25 transition-all group animate-in slide-in-from-bottom-3 duration-300"
+      className="fixed bottom-16 left-3 right-3 z-40 md:bottom-6 md:right-6 md:left-auto md:w-80 bg-zinc-950/95 backdrop-blur-2xl border rounded-2xl p-2.5 shadow-2xl flex items-center justify-between gap-3 cursor-pointer transition-all group animate-in slide-in-from-bottom-3 duration-300"
+      style={{
+        borderColor: `${config.primaryHex}35`,
+        boxShadow: `0 10px 30px -5px ${config.glow}, 0 20px 25px -5px rgba(0, 0, 0, 0.8)`,
+      }}
       title="Tap to open full player"
     >
       <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -44,12 +50,18 @@ export function MiniPlayerBar({
         {/* Info */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-red-400">
+            <span
+              className="w-1.5 h-1.5 rounded-full animate-pulse"
+              style={{ backgroundColor: config.primaryHex }}
+            />
+            <span
+              className="text-[10px] font-bold uppercase tracking-wider"
+              style={{ color: config.primaryHex }}
+            >
               Now Playing
             </span>
           </div>
-          <h4 className="text-xs font-semibold text-white truncate group-hover:text-red-300 transition-colors">
+          <h4 className="text-xs font-semibold text-white truncate group-hover:text-zinc-200 transition-colors">
             {currentFile.clean_title}
           </h4>
         </div>
@@ -60,7 +72,11 @@ export function MiniPlayerBar({
         {/* Play/Pause Button */}
         <button
           onClick={onTogglePlayPause}
-          className="w-9 h-9 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-lg shadow-red-600/30 active:scale-90 transition-all"
+          className="w-9 h-9 rounded-full text-white flex items-center justify-center shadow-lg active:scale-90 transition-all"
+          style={{
+            background: `linear-gradient(to right, ${config.primaryHex}, ${config.secondaryHex})`,
+            boxShadow: `0 4px 14px 0 ${config.glow}`,
+          }}
           title={isPlaying ? "Pause" : "Play"}
         >
           {isPlaying ? (

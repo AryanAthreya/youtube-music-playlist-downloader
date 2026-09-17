@@ -87,6 +87,13 @@ class ProgressBridge:
 
                 # Update the latest snapshot (thread-safe)
                 with self._snapshot_lock:
+                    if self._latest_snapshot and self._latest_snapshot.total_count > 0:
+                        if snapshot.total_count == 0:
+                            snapshot.total_count = self._latest_snapshot.total_count
+                            snapshot.completed_count = self._latest_snapshot.completed_count
+                            snapshot.files = list(self._latest_snapshot.files)
+                            if self._latest_snapshot.video_id and not snapshot.video_id:
+                                snapshot.video_id = self._latest_snapshot.video_id
                     self._latest_snapshot = snapshot
 
                 # Put on the async queue for WebSocket consumption
@@ -162,6 +169,8 @@ class ProgressBridge:
             "file_path": snapshot.file_path,
             "completed_count": snapshot.completed_count,
             "total_count": snapshot.total_count,
+            "video_id": snapshot.video_id,
+            "files": snapshot.files,
         }
 
     def get_latest_snapshot(self) -> ProgressSnapshot:

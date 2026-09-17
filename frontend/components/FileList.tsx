@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { getFiles, getFileByNameUrl, deleteFileByName, resolveMediaUrl } from "@/lib/api";
 import { formatFileSize } from "@/lib/websocket";
 import type { FileInfo } from "@/lib/types";
+import { useTheme } from "../context/ThemeContext";
 
 interface FileListProps {
   id: string;
@@ -39,6 +40,7 @@ function isAudioFile(filename: string): boolean {
 }
 
 export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
+  const { config } = useTheme();
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -249,36 +251,19 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
           {/* Tabs */}
           <div className="flex items-center gap-1.5 p-1 glass-card rounded-xl">
-            <button
-              onClick={() => setFilterType("all")}
-              className={`px-3 py-1 text-xs font-medium rounded-lg transition-all ${
-                filterType === "all"
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-gray-400 hover:text-gray-200"
-              }`}
-            >
-              All ({files.length})
-            </button>
-            <button
-              onClick={() => setFilterType("video")}
-              className={`px-3 py-1 text-xs font-medium rounded-lg transition-all ${
-                filterType === "video"
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-gray-400 hover:text-gray-200"
-              }`}
-            >
-              Videos ({videoCount})
-            </button>
-            <button
-              onClick={() => setFilterType("audio")}
-              className={`px-3 py-1 text-xs font-medium rounded-lg transition-all ${
-                filterType === "audio"
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-gray-400 hover:text-gray-200"
-              }`}
-            >
-              Audio ({audioCount})
-            </button>
+            {(["all", "video", "audio"] as const).map((type) => (
+              <button
+                key={type}
+                onClick={() => setFilterType(type)}
+                className="px-3 py-1 text-xs font-medium rounded-lg transition-all"
+                style={filterType === type
+                  ? { backgroundColor: config.primaryHex, color: "#fff" }
+                  : { color: "rgba(156,163,175,1)" }
+                }
+              >
+                {type === "all" ? `All (${files.length})` : type === "video" ? `Videos (${videoCount})` : `Audio (${audioCount})`}
+              </button>
+            ))}
           </div>
 
           {/* Search input styled like Brave/Chrome downloads bar */}
@@ -313,7 +298,10 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
       {/* Empty State */}
       {files.length === 0 && !loading && (
         <div className="glass-panel rounded-2xl p-8 text-center space-y-3">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-2xl">
+          <div
+            className="w-14 h-14 mx-auto rounded-2xl flex items-center justify-center text-2xl"
+            style={{ background: `${config.primaryHex}18`, border: `1px solid ${config.primaryHex}33` }}
+          >
             📥
           </div>
           <h3 className="text-base font-semibold text-gray-200">No Download History Yet</h3>
@@ -379,7 +367,9 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                       setPreviewFile(file);
                     }
                   }}
-                  className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-slate-950 overflow-hidden shrink-0 border border-white/10 flex items-center justify-center cursor-pointer group-hover:border-indigo-500/50 shadow-md transition-all"
+                  className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-slate-950 overflow-hidden shrink-0 border border-white/10 flex items-center justify-center cursor-pointer shadow-md transition-all"
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = `${config.primaryHex}80`)}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = "")}
                   title={isDeleteMode ? "Select for deletion" : "Click to play"}
                 >
                   {file.thumbnail_url ? (
@@ -404,7 +394,7 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                       </>
                     ) : isAudio ? (
                       <>
-                        <span className="text-indigo-400">🎵</span>
+                        <span style={{ color: config.primaryHex }}>🎵</span>
                         <span className="font-mono">MP3</span>
                       </>
                     ) : (
@@ -428,7 +418,9 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                         setPreviewFile(file);
                       }
                     }}
-                    className="text-left font-semibold text-xs sm:text-sm text-white group-hover:text-indigo-300 hover:underline truncate block w-full transition-colors leading-snug"
+                    className="text-left font-semibold text-xs sm:text-sm text-white hover:underline truncate block w-full transition-colors leading-snug"
+                    onMouseEnter={(e) => (e.currentTarget.style.color = config.primaryHex)}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = "")}
                     title={isDeleteMode ? "Select for deletion" : "Click to play in Player"}
                   >
                     {file.clean_title || file.filename}
@@ -438,7 +430,7 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                     <span>•</span>
                     <span>{formatRelativeTime(file.modified_at)}</span>
                     <span className="hidden sm:inline">•</span>
-                    <span className="hidden sm:inline text-indigo-400/80 font-mono text-[10px]">
+                    <span className="hidden sm:inline font-mono text-[10px]" style={{ color: `${config.primaryHex}cc` }}>
                       {isVideo ? "MP4 Video" : "MP3 Audio"}
                     </span>
                   </p>
@@ -475,7 +467,10 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                         setPreviewFile(file);
                       }
                     }}
-                    className="p-2 text-indigo-400 hover:text-indigo-300 rounded-lg hover:bg-indigo-500/15 active:scale-95 transition-all"
+                    className="p-2 rounded-lg active:scale-95 transition-all"
+                    style={{ color: config.primaryHex }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = `${config.primaryHex}22`)}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "")}
                     title="Play in dedicated player"
                   >
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">

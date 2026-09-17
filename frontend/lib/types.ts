@@ -36,6 +36,7 @@ export interface ProgressSnapshot {
   filename: string | null;
   completed_count: number;
   total_count: number;
+  files?: string[];
 }
 
 // WebSocket frame (superset of ProgressSnapshot with job context)

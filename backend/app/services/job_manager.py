@@ -164,6 +164,7 @@ def build_job_response(job: Job) -> JobResponse:
         filename=snap.filename,
         completed_count=snap.completed_count,
         total_count=snap.total_count,
+        files=getattr(snap, "files", []),
     )
 
     children_schema = [
@@ -442,7 +443,8 @@ def _run_playlist_job(job: Job, bridge: ProgressBridge) -> None:
             break
 
         child.status = JobStatus.DOWNLOADING
-        _update_playlist_bridge(bridge, job, idx)
+        completed_count = sum(1 for c in job.children if c.status == JobStatus.COMPLETED)
+        _update_playlist_bridge(bridge, job, idx, completed_count=completed_count, total=total)
 
         try:
             child_url = f"https://www.youtube.com/watch?v={child.video_id}"
@@ -452,29 +454,39 @@ def _run_playlist_job(job: Job, bridge: ProgressBridge) -> None:
             temp_dir = create_job_temp_dir(child_job_id)
             output_template = str(temp_dir / "%(title)s.%(ext)s")
 
-            # Child progress hook updates the child's progress snapshot
-            def make_child_hook(c: ChildJob):
+            # Child progress hook updates the child and aggregate playlist snapshot
+            def make_child_hook(c: ChildJob, current_idx: int, total_videos: int):
                 def hook(d):
+                    downloaded = d.get("downloaded_bytes", 0) or 0
+                    total_b = d.get("total_bytes") or d.get("total_bytes_estimate")
+                    child_pct = min(100.0, (downloaded / (total_b or 1)) * 100) if total_b else 0.0
+
+                    done_count = sum(1 for ch in job.children if ch.status == JobStatus.COMPLETED)
+                    done_files = [ch.file_path.name for ch in job.children if ch.file_path and ch.status == JobStatus.COMPLETED]
+                    agg_percent = min(100.0, ((done_count + (child_pct / 100.0)) / max(1, total_videos)) * 100)
+
                     snap = ProgressSnapshot(
                         status=d.get("status", "downloading"),
-                        downloaded_bytes=d.get("downloaded_bytes", 0) or 0,
-                        total_bytes=d.get("total_bytes") or d.get("total_bytes_estimate"),
+                        downloaded_bytes=downloaded,
+                        total_bytes=total_b,
                         speed=d.get("speed"),
                         eta=d.get("eta"),
-                        percent=min(100.0, ((d.get("downloaded_bytes", 0) or 0) /
-                                   (d.get("total_bytes") or 1)) * 100) if d.get("total_bytes") else 0.0,
+                        percent=round(agg_percent, 1),
                         video_id=c.video_id,
+                        completed_count=done_count,
+                        total_count=total_videos,
+                        files=done_files,
                     )
                     c.progress = snap
-                    # Also forward to the parent bridge for aggregate WS updates
-                    bridge.get_hook()(d)
+                    job.progress = snap
+                    bridge.update_snapshot(snap)
                 return hook
 
             yt_dlp_client.download_video(
                 url=child_url,
                 format_selector=fmt_selector,
                 output_template=output_template,
-                progress_hooks=[make_child_hook(child)],
+                progress_hooks=[make_child_hook(child, idx, total)],
                 cancel_event=job.cancel_event,
                 postprocessors=postprocessors,
                 socket_timeout=settings.ytdlp_socket_timeout,
@@ -544,13 +556,19 @@ def _bundle_playlist_files(job: Job) -> Path | None:
 
 def _update_bridge_status(bridge: ProgressBridge, status: str, job: Job) -> None:
     """Push a status-only progress update to the bridge."""
+    completed_count = sum(1 for c in job.children if c.status == JobStatus.COMPLETED)
+    total_count = len(job.children)
+    done_files = [c.file_path.name for c in job.children if c.file_path and c.status == JobStatus.COMPLETED]
     snap = ProgressSnapshot(
         status=status,
         file_path=str(job.file_path) if job.file_path else None,
         filename=job.file_path.name if job.file_path else None,
-        completed_count=sum(1 for c in job.children if c.status == JobStatus.COMPLETED),
-        total_count=len(job.children),
+        completed_count=completed_count,
+        total_count=total_count,
+        percent=100.0 if status == JobStatus.COMPLETED.value else (round((completed_count / max(1, total_count)) * 100, 1) if total_count else 0.0),
+        files=done_files,
     )
+    job.progress = snap
     bridge.update_snapshot(snap)
 
 
@@ -562,12 +580,19 @@ def _update_playlist_bridge(
     total: int = 0,
 ) -> None:
     """Push aggregate playlist progress to the bridge."""
+    actual_completed = sum(1 for c in job.children if c.status == JobStatus.COMPLETED) if not completed_count else completed_count
+    actual_total = total or len(job.children)
+    agg_percent = round((actual_completed / max(1, actual_total)) * 100, 1)
+    done_files = [c.file_path.name for c in job.children if c.file_path and c.status == JobStatus.COMPLETED]
     snap = ProgressSnapshot(
         status="downloading",
-        completed_count=completed_count,
-        total_count=total or len(job.children),
-        video_id=job.children[current_idx].video_id if job.children else None,
+        completed_count=actual_completed,
+        total_count=actual_total,
+        percent=agg_percent,
+        video_id=job.children[current_idx].video_id if job.children and current_idx < len(job.children) else None,
+        files=done_files,
     )
+    job.progress = snap
     bridge.update_snapshot(snap)
 
 

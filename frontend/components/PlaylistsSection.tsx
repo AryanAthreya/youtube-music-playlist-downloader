@@ -6,7 +6,23 @@ import { resolveMediaUrl } from "@/lib/api";
 import { formatFileSize } from "@/lib/websocket";
 import { useTheme } from "../context/ThemeContext";
 
-const LOCAL_STORAGE_PLAYLISTS_KEY = "ytdl_user_playlists_v1";
+export const LOCAL_STORAGE_PLAYLISTS_KEY = "ytdl_user_playlists_v1";
+
+export function getStoredPlaylists(): CustomPlaylist[] {
+  try {
+    const stored = localStorage.getItem(LOCAL_STORAGE_PLAYLISTS_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveStoredPlaylists(playlists: CustomPlaylist[]): void {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_PLAYLISTS_KEY, JSON.stringify(playlists));
+    window.dispatchEvent(new Event("ytdl_playlists_updated"));
+  } catch {}
+}
 
 export interface CustomPlaylist {
   id: string;
@@ -17,8 +33,8 @@ export interface CustomPlaylist {
 interface PlaylistsSectionProps {
   id?: string;
   allFiles: FileInfo[];
-  onPlayPlaylist: (tracks: FileInfo[], startIndex?: number) => void;
-  onSelectTrack: (file: FileInfo, queue: FileInfo[]) => void;
+  onPlayPlaylist: (tracks: FileInfo[], startIndex?: number, playlistName?: string) => void;
+  onSelectTrack: (file: FileInfo, queue: FileInfo[], playlistName?: string) => void;
   currentPlayingFile?: FileInfo | null;
 }
 
@@ -35,31 +51,39 @@ export function PlaylistsSection({
   const [showNewModal, setShowNewModal] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
 
-  // Load playlists
+  // Load playlists and listen for sync updates
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(LOCAL_STORAGE_PLAYLISTS_KEY);
-      if (stored) {
-        setCustomPlaylists(JSON.parse(stored));
-      } else {
-        const defaults: CustomPlaylist[] = [
-          { id: "pl-favorites", name: "Favorites ⭐", songFilenames: [] },
-          { id: "pl-workout", name: "Workout Energy ⚡", songFilenames: [] },
-          { id: "pl-chill", name: "Late Night Chill 🌙", songFilenames: [] },
-        ];
-        setCustomPlaylists(defaults);
-        localStorage.setItem(LOCAL_STORAGE_PLAYLISTS_KEY, JSON.stringify(defaults));
+    const load = () => {
+      try {
+        const stored = localStorage.getItem(LOCAL_STORAGE_PLAYLISTS_KEY);
+        if (stored) {
+          setCustomPlaylists(JSON.parse(stored));
+        } else {
+          const defaults: CustomPlaylist[] = [
+            { id: "pl-favorites", name: "Favorites ⭐", songFilenames: [] },
+            { id: "pl-workout", name: "Workout Energy ⚡", songFilenames: [] },
+            { id: "pl-chill", name: "Late Night Chill 🌙", songFilenames: [] },
+          ];
+          setCustomPlaylists(defaults);
+          localStorage.setItem(LOCAL_STORAGE_PLAYLISTS_KEY, JSON.stringify(defaults));
+        }
+      } catch (e) {
+        console.warn("Failed to load playlists", e);
       }
-    } catch (e) {
-      console.warn("Failed to load playlists", e);
-    }
+    };
+
+    load();
+    window.addEventListener("ytdl_playlists_updated", load);
+    window.addEventListener("storage", load);
+    return () => {
+      window.removeEventListener("ytdl_playlists_updated", load);
+      window.removeEventListener("storage", load);
+    };
   }, []);
 
   const savePlaylists = (updated: CustomPlaylist[]) => {
     setCustomPlaylists(updated);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_PLAYLISTS_KEY, JSON.stringify(updated));
-    } catch {}
+    saveStoredPlaylists(updated);
   };
 
   const handleCreatePlaylist = (e: React.FormEvent) => {
@@ -236,7 +260,7 @@ export function PlaylistsSection({
               <button
                 onClick={() => {
                   if (selectedPlaylist.tracks.length > 0) {
-                    onPlayPlaylist(selectedPlaylist.tracks, 0);
+                    onPlayPlaylist(selectedPlaylist.tracks, 0, selectedPlaylist.name);
                   }
                 }}
                 disabled={selectedPlaylist.tracks.length === 0}
@@ -252,7 +276,7 @@ export function PlaylistsSection({
                 onClick={() => {
                   if (selectedPlaylist.tracks.length > 0) {
                     const shuffled = [...selectedPlaylist.tracks].sort(() => Math.random() - 0.5);
-                    onPlayPlaylist(shuffled, 0);
+                    onPlayPlaylist(shuffled, 0, selectedPlaylist.name);
                   }
                 }}
                 disabled={selectedPlaylist.tracks.length <= 1}
@@ -267,14 +291,21 @@ export function PlaylistsSection({
           </div>
         </div>
 
-        {/* Tracklist Table (Image 1 Style) */}
+        {/* Track List */}
         <div className="space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-zinc-400">
+              Playlist Queue ({selectedPlaylist.tracks.length})
+            </h3>
+            <span className="text-[11px] text-zinc-500">Click any track to stream</span>
+          </div>
+
           {selectedPlaylist.tracks.length === 0 ? (
-            <div className="p-12 text-center rounded-3xl glass-card border border-white/5 space-y-3">
-              <div className="text-4xl">🎵</div>
-              <h3 className="text-sm font-semibold text-zinc-300">Playlist is empty</h3>
-              <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-                Go to Downloads History or the Player and click the "+ Playlist" button to add tracks to this playlist.
+            <div className="p-8 text-center rounded-2xl border border-white/10 glass-card space-y-2">
+              <span className="text-3xl">📭</span>
+              <p className="text-sm text-zinc-400">This playlist is currently empty.</p>
+              <p className="text-xs text-zinc-500">
+                Go to the Downloads History tab and click the ➕ button on any song to add it.
               </p>
             </div>
           ) : (
@@ -283,7 +314,7 @@ export function PlaylistsSection({
               return (
                 <div
                   key={track.filename}
-                  onClick={() => onSelectTrack(track, selectedPlaylist.tracks)}
+                  onClick={() => onSelectTrack(track, selectedPlaylist.tracks, selectedPlaylist.name)}
                   className={`group flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-all ${
                     isPlaying
                       ? "bg-white/10 border border-white/20 shadow-lg shadow-black/30"
@@ -333,7 +364,7 @@ export function PlaylistsSection({
                   {/* Actions */}
                   <div className="flex items-center gap-2 pl-2" onClick={(e) => e.stopPropagation()}>
                     <button
-                      onClick={() => onSelectTrack(track, selectedPlaylist.tracks)}
+                      onClick={() => onSelectTrack(track, selectedPlaylist.tracks, selectedPlaylist.name)}
                       className={`p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 transition-colors ${
                         isPlaying ? config.textAccent : ""
                       }`}
@@ -421,7 +452,7 @@ export function PlaylistsSection({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      onPlayPlaylist(pl.tracks, 0);
+                      onPlayPlaylist(pl.tracks, 0, pl.name);
                     }}
                     className={`absolute bottom-2.5 right-2.5 w-10 h-10 rounded-full bg-gradient-to-r ${config.gradient} text-white flex items-center justify-center shadow-lg opacity-90 sm:opacity-0 sm:group-hover:opacity-100 sm:translate-y-2 sm:group-hover:translate-y-0 transition-all active:scale-90`}
                     title="Play Playlist"

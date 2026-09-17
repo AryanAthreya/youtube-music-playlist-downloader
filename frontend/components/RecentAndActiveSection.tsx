@@ -3,6 +3,8 @@ import type { FileInfo } from "@/lib/types";
 import { formatFileSize } from "@/lib/websocket";
 import { resolveMediaUrl } from "@/lib/api";
 
+import { useTheme } from "@/context/ThemeContext";
+
 interface RecentAndActiveSectionProps {
   id: string;
   currentFile: FileInfo | null;
@@ -22,16 +24,23 @@ export function RecentAndActiveSection({
   onOpenPlayer,
   onViewLibrary,
 }: RecentAndActiveSectionProps) {
+  const { config } = useTheme();
   const hasHistory = recentFiles.length > 0;
 
   return (
     <div id={id} className="space-y-6 pt-4 animate-in fade-in duration-300">
       {/* ── 1. Continue Playing / You Are Playing Banner ─────────────────── */}
       {currentFile && (
-        <div className="relative overflow-hidden p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-purple-950/40 via-slate-900/80 to-indigo-950/40 border border-purple-500/30 shadow-xl shadow-purple-950/20 glass-card">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5 w-full sm:w-auto">
-              <div className="relative w-14 h-14 rounded-xl overflow-hidden bg-slate-850 shrink-0 shadow-md border border-white/10">
+        <div
+          className="relative overflow-hidden p-3.5 sm:p-5 rounded-2xl bg-gradient-to-r from-slate-900/95 via-slate-900/80 to-slate-900/95 border glass-card transition-all"
+          style={{
+            borderColor: `${config.primaryHex}40`,
+            boxShadow: `0 10px 25px -5px ${config.glow}`,
+          }}
+        >
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
+            <div className="flex items-center gap-3 min-w-0 flex-1 w-full">
+              <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-xl overflow-hidden bg-slate-850 shrink-0 shadow-md border border-white/10">
                 {currentFile.thumbnail_url ? (
                   <img
                     src={resolveMediaUrl(currentFile.thumbnail_url)}
@@ -43,9 +52,6 @@ export function RecentAndActiveSection({
                     {currentFile.media_type === "video" ? "🎬" : "🎵"}
                   </div>
                 )}
-                <span className="absolute bottom-1 right-1 px-1 py-0.2 rounded text-[9px] font-black bg-black/80 text-white">
-                  {currentFile.media_type === "video" ? "🎬" : "🎵"}
-                </span>
               </div>
 
               <div className="min-w-0 flex-1">
@@ -54,25 +60,32 @@ export function RecentAndActiveSection({
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                   </span>
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-purple-300">
+                  <span
+                    className="text-[10px] uppercase font-bold tracking-wider"
+                    style={{ color: config.primaryHex }}
+                  >
                     You Are Playing
                   </span>
                 </div>
                 <h3 className="text-sm sm:text-base font-bold text-white truncate">
                   {currentFile.clean_title}
                 </h3>
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-gray-400 truncate">
                   {formatFileSize(currentFile.size_bytes)} • Ready to continue
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
               <button
                 onClick={() => onPlayTrack(currentFile)}
-                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs sm:text-sm shadow-md shadow-purple-600/25 active:scale-95 transition-all shrink-0"
+                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl text-white font-semibold text-xs sm:text-sm shadow-md active:scale-95 transition-all shrink-0 whitespace-nowrap"
+                style={{
+                  background: `linear-gradient(to right, ${config.primaryHex}, ${config.secondaryHex})`,
+                  boxShadow: `0 4px 14px 0 ${config.glow}`,
+                }}
               >
-                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z" />
                 </svg>
                 <span>Resume</span>
@@ -80,7 +93,7 @@ export function RecentAndActiveSection({
 
               <button
                 onClick={onOpenPlayer}
-                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs sm:text-sm border border-white/10 active:scale-95 transition-all shrink-0"
+                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs sm:text-sm border border-white/10 active:scale-95 transition-all shrink-0 whitespace-nowrap"
               >
                 <span>Full Player →</span>
               </button>
@@ -94,14 +107,18 @@ export function RecentAndActiveSection({
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-indigo-500" />
+              <div
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: config.primaryHex }}
+              />
               <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-gray-300">
                 Recently Downloaded
               </h3>
             </div>
             <button
               onClick={onViewLibrary}
-              className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1"
+              className="text-xs font-semibold transition-colors flex items-center gap-1 hover:opacity-80"
+              style={{ color: config.primaryHex }}
             >
               <span>View all {totalCount} in Library</span>
               <span>→</span>
@@ -130,9 +147,6 @@ export function RecentAndActiveSection({
                       {file.media_type === "video" ? "🎬" : "🎵"}
                     </div>
                   )}
-                  <span className="absolute bottom-1 right-1 px-1 py-0.2 rounded text-[8px] font-black bg-black/85 text-white">
-                    {file.media_type === "video" ? "🎬 VID" : "🎵 MP3"}
-                  </span>
                 </div>
 
                 {/* Details */}
@@ -140,7 +154,7 @@ export function RecentAndActiveSection({
                   onClick={() => onPlayTrack(file)}
                   className="min-w-0 flex-1 cursor-pointer"
                 >
-                  <h4 className="text-xs sm:text-sm font-semibold text-white truncate group-hover:text-indigo-300 transition-colors">
+                  <h4 className="text-xs sm:text-sm font-semibold text-white truncate group-hover:text-emerald-300 transition-colors">
                     {file.clean_title}
                   </h4>
                   <p className="text-[11px] text-gray-400">
@@ -151,7 +165,7 @@ export function RecentAndActiveSection({
                 {/* Quick Play Button */}
                 <button
                   onClick={() => onPlayTrack(file)}
-                  className="p-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm shrink-0"
+                  className="p-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-all shadow-sm shrink-0"
                   title="Play"
                 >
                   <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">

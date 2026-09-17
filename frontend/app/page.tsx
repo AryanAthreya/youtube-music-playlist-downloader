@@ -13,10 +13,10 @@ import { BottomNavBar } from "@/components/BottomNavBar";
 import { DownloadCompleteNotification } from "@/components/DownloadCompleteNotification";
 import { RecentAndActiveSection } from "@/components/RecentAndActiveSection";
 import { MiniPlayerBar } from "@/components/MiniPlayerBar";
-import { PlaylistsSection } from "@/components/PlaylistsSection";
+import { PlaylistsSection, getStoredPlaylists, saveStoredPlaylists, type CustomPlaylist } from "@/components/PlaylistsSection";
 import { ThemeSelectorModal } from "@/components/ThemeSelectorModal";
 import { ThemeProvider, useTheme } from "@/context/ThemeContext";
-import { fetchInfo, searchYouTube, createDownload, deleteJob, getFileUrl, getFiles } from "@/lib/api";
+import { fetchInfo, searchYouTube, createDownload, deleteJob, getFileUrl, getFiles, getJobStatus } from "@/lib/api";
 import { createJobWebSocket } from "@/lib/websocket";
 import type {
   InfoResponse,
@@ -48,6 +48,8 @@ function HomePageContent() {
   const [allDownloadedFiles, setAllDownloadedFiles] = useState<FileInfo[]>([]);
   const [currentPlayingFile, setCurrentPlayingFile] = useState<FileInfo | null>(null);
   const [playerQueue, setPlayerQueue] = useState<FileInfo[]>([]);
+  const [activePlaylistName, setActivePlaylistName] = useState<string>("All Downloads");
+  const [isBigControlsVisible, setIsBigControlsVisible] = useState<boolean>(true);
   const [isPlayerPlaying, setIsPlayerPlaying] = useState<boolean>(true);
   const [isThemeModalOpen, setIsThemeModalOpen] = useState<boolean>(false);
   const playerHandleRef = useRef<NowPlayingSectionHandle | null>(null);
@@ -56,6 +58,43 @@ function HomePageContent() {
     frame: WebSocketFrame;
   } | null>(null);
   const autoDownloadedJobRef = useRef<string | null>(null);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("ytdl_recent_searches_v1");
+      if (stored) {
+        setRecentSearches(JSON.parse(stored));
+      }
+    } catch {}
+  }, []);
+
+  const saveRecentSearch = (query: string) => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    try {
+      const stored = localStorage.getItem("ytdl_recent_searches_v1");
+      const list: string[] = stored ? JSON.parse(stored) : [];
+      const updated = [trimmed, ...list.filter((q) => q.toLowerCase() !== trimmed.toLowerCase())].slice(0, 8);
+      localStorage.setItem("ytdl_recent_searches_v1", JSON.stringify(updated));
+      setRecentSearches(updated);
+    } catch {}
+  };
+
+  const removeRecentSearch = (query: string) => {
+    try {
+      const updated = recentSearches.filter((q) => q !== query);
+      localStorage.setItem("ytdl_recent_searches_v1", JSON.stringify(updated));
+      setRecentSearches(updated);
+    } catch {}
+  };
+
+  const clearRecentSearches = () => {
+    try {
+      localStorage.removeItem("ytdl_recent_searches_v1");
+      setRecentSearches([]);
+    } catch {}
+  };
 
   // Fetch all and recent files and update count
   const refreshFiles = useCallback(() => {
@@ -113,9 +152,12 @@ function HomePageContent() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  const handlePlayTrack = (file: FileInfo, queue?: FileInfo[]) => {
+  const handlePlayTrack = (file: FileInfo, queue?: FileInfo[], playlistName?: string) => {
     if (queue && queue.length > 0) {
       setPlayerQueue(queue);
+    }
+    if (playlistName) {
+      setActivePlaylistName(playlistName);
     }
     setCurrentPlayingFile(file);
     setIsPlayerPlaying(true);
@@ -134,6 +176,7 @@ function HomePageContent() {
       is_preview: true,
       youtube_id: item.video_id,
     };
+    setActivePlaylistName("YouTube Search");
     setCurrentPlayingFile(previewTrack);
     setIsPlayerPlaying(true);
   }, []);
@@ -165,6 +208,7 @@ function HomePageContent() {
     setWsHandle(null);
 
     if (isSearch) {
+      saveRecentSearch(input);
       setState({ phase: "searching", query: input });
       try {
         const data = await searchYouTube(input);
@@ -209,6 +253,9 @@ function HomePageContent() {
       if (state.phase !== "info") return;
 
       const isPlaylist = state.data.type === "playlist";
+      const playlistTitle = isPlaylist
+        ? (state.data as PlaylistInfoResponse).title || "Downloaded Playlist"
+        : null;
       const fullRequest: DownloadRequest = {
         ...request,
         playlist_video_ids: isPlaylist ? state.selectedVideoIds : null,
@@ -216,12 +263,58 @@ function HomePageContent() {
 
       try {
         const { job_id } = await createDownload(fullRequest);
+        const playlistId = isPlaylist ? `pl-dl-${job_id}` : null;
+
+        // Immediately save the playlist in Playlists section as separate playlist
+        if (isPlaylist && playlistTitle && playlistId) {
+          try {
+            const currentPlaylists = getStoredPlaylists();
+            if (!currentPlaylists.some((p) => p.id === playlistId)) {
+              const newPl: CustomPlaylist = {
+                id: playlistId,
+                name: playlistTitle,
+                songFilenames: [],
+              };
+              saveStoredPlaylists([...currentPlaylists, newPl]);
+            }
+          } catch (e) {
+            console.warn("Failed to register downloaded playlist", e);
+          }
+        }
 
         setState({
           phase: "downloading",
           jobId: job_id,
           latestFrame: null,
         });
+
+        const updatePlaylistTracks = async (frameFiles?: string[]) => {
+          if (!playlistId) return;
+          try {
+            let filesToSave: string[] = frameFiles || [];
+            if (filesToSave.length === 0) {
+              const statusData = await getJobStatus(job_id);
+              filesToSave = (statusData.children || [])
+                .filter((c) => c.file_path && c.status === "completed")
+                .map((c) => {
+                  const normalized = (c.file_path || "").replace(/\\/g, "/");
+                  return normalized.split("/").pop() || "";
+                })
+                .filter(Boolean);
+            }
+            if (filesToSave.length > 0) {
+              const currentPlaylists = getStoredPlaylists();
+              const updated = currentPlaylists.map((pl) => {
+                if (pl.id === playlistId) {
+                  const merged = Array.from(new Set([...pl.songFilenames, ...filesToSave]));
+                  return { ...pl, songFilenames: merged };
+                }
+                return pl;
+              });
+              saveStoredPlaylists(updated);
+            }
+          } catch {}
+        };
 
         const handle = createJobWebSocket(
           job_id,
@@ -230,11 +323,18 @@ function HomePageContent() {
               if (prev.phase !== "downloading") return prev;
               return { ...prev, latestFrame: frame };
             });
+            if (isPlaylist && frame.files && frame.files.length > 0) {
+              updatePlaylistTracks(frame.files);
+              refreshFiles();
+            }
           },
-          (frame) => {
+          async (frame) => {
             setDownloadNotification({ jobId: job_id, frame });
             setState({ phase: "idle" });
             setWsHandle(null);
+            if (isPlaylist) {
+              await updatePlaylistTracks(frame.files);
+            }
             refreshFiles();
           },
           (errMsg) => {
@@ -275,7 +375,8 @@ function HomePageContent() {
     <main
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
-      className={`min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100 flex flex-col justify-between ${
+      style={{ background: config.pageBgStyle }}
+      className={`min-h-screen ${config.pageBg} ${config.textColor} flex flex-col justify-between transition-colors duration-500 ${
         currentPlayingFile && activeTab !== "player" ? "pb-32 md:pb-6" : "pb-20 md:pb-0"
       } select-none md:select-auto`}
     >
@@ -312,64 +413,57 @@ function HomePageContent() {
             </div>
           </div>
 
-          {/* Navigation Tabs (Hidden on mobile) */}
-          <div className="hidden sm:flex items-center gap-1.5 p-1 rounded-2xl bg-slate-900/90 border border-white/10 glass-card">
-            <button
-              onClick={() => setActiveTab("downloader")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
-                activeTab === "downloader" || activeTab === "player"
-                  ? `bg-gradient-to-r ${config.gradient} text-white shadow-md`
-                  : "text-gray-400 hover:text-white"
-              }`}
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              <span>Downloader</span>
-            </button>
+          <div className="flex items-center gap-2">
+            {/* Navigation Tabs (Hidden on mobile) */}
+            <div className={`hidden sm:flex items-center gap-1.5 p-1 rounded-2xl ${config.navBg} border glass-card`}>
+              <button
+                onClick={() => setActiveTab("downloader")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+                  activeTab === "downloader" || activeTab === "player"
+                    ? `bg-gradient-to-r ${config.gradient} text-white shadow-md`
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>Downloader</span>
+              </button>
 
-            <button
-              onClick={() => setActiveTab("history")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
-                activeTab === "history"
-                  ? `bg-gradient-to-r ${config.gradient} text-white shadow-md`
-                  : "text-gray-400 hover:text-white"
-              }`}
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
-              <span>Downloads History</span>
-              {historyCount > 0 && (
-                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-white/20 text-white">
-                  {historyCount}
-                </span>
-              )}
-            </button>
+              <button
+                onClick={() => setActiveTab("history")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+                  activeTab === "history"
+                    ? `bg-gradient-to-r ${config.gradient} text-white shadow-md`
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                <span>Downloads History</span>
+                {historyCount > 0 && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-white/20 text-white">
+                    {historyCount}
+                  </span>
+                )}
+              </button>
 
-            {/* Playlists Tab */}
-            <button
-              onClick={() => setActiveTab("playlists")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
-                activeTab === "playlists"
-                  ? `bg-gradient-to-r ${config.gradient} text-white shadow-md`
-                  : "text-gray-400 hover:text-white"
-              }`}
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-              </svg>
-              <span>Playlists</span>
-            </button>
-
-            {/* Theme Equalizer Button */}
-            <button
-              onClick={() => setIsThemeModalOpen(true)}
-              className="p-2 text-zinc-300 hover:text-white rounded-xl hover:bg-white/10 transition-colors ml-1 border border-white/10"
-              title="Theme Color Equalizer"
-            >
-              <span className="text-sm">{config.emoji}</span>
-            </button>
+              {/* Playlists Tab */}
+              <button
+                onClick={() => setActiveTab("playlists")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+                  activeTab === "playlists"
+                    ? `bg-gradient-to-r ${config.gradient} text-white shadow-md`
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                </svg>
+                <span>Playlists</span>
+              </button>
+            </div>
           </div>
         </header>
 
@@ -382,7 +476,7 @@ function HomePageContent() {
                 <FileList
                   id="library-files-list"
                   onCountChange={setHistoryCount}
-                  onPlayTrack={handlePlayTrack}
+                  onPlayTrack={(file) => handlePlayTrack(file, allDownloadedFiles, "Downloads History")}
                 />
               </div>
             ) : activeTab === "playlists" ? (
@@ -391,15 +485,17 @@ function HomePageContent() {
                   id="playlists-section"
                   allFiles={allDownloadedFiles}
                   currentPlayingFile={currentPlayingFile}
-                  onPlayPlaylist={(tracks, startIdx = 0) => {
+                  onPlayPlaylist={(tracks, startIdx = 0, playlistName) => {
                     if (tracks.length > 0) {
                       setPlayerQueue(tracks);
+                      if (playlistName) setActivePlaylistName(playlistName);
                       setCurrentPlayingFile(tracks[startIdx] || tracks[0]);
                       setIsPlayerPlaying(true);
                     }
                   }}
-                  onSelectTrack={(track, queue) => {
+                  onSelectTrack={(track, queue, playlistName) => {
                     setPlayerQueue(queue);
+                    if (playlistName) setActivePlaylistName(playlistName);
                     setCurrentPlayingFile(track);
                     setIsPlayerPlaying(true);
                   }}
@@ -434,6 +530,51 @@ function HomePageContent() {
                       loading={false}
                     />
 
+                    {/* Recent Searches Chips */}
+                    {recentSearches.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2 pt-1 pb-1 animate-in fade-in duration-200">
+                        <span className={`text-[11px] font-semibold flex items-center gap-1 ${config.isLight ? "text-stone-500" : "text-gray-400"}`}>
+                          <svg className="w-3.5 h-3.5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span>Recent:</span>
+                        </span>
+                        {recentSearches.map((item) => (
+                          <div
+                            key={item}
+                            className={`group inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-all cursor-pointer ${
+                              config.isLight
+                                ? "bg-white/80 hover:bg-white text-stone-700 border-stone-300 shadow-sm"
+                                : "bg-white/5 hover:bg-white/10 text-gray-300 border-white/10"
+                            }`}
+                            onClick={() => handleFetchOrSearch(item, true)}
+                          >
+                            <span className="hover:underline">{item}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeRecentSearch(item);
+                              }}
+                              className="text-gray-400 hover:text-red-400 text-xs font-bold px-0.5"
+                              title="Remove"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={clearRecentSearches}
+                          className={`text-[11px] underline underline-offset-2 ml-1 transition-colors ${
+                            config.isLight ? "text-stone-400 hover:text-stone-600" : "text-gray-500 hover:text-gray-300"
+                          }`}
+                        >
+                          Clear all
+                        </button>
+                      </div>
+                    )}
+
                     {/* Continue Playing / You are Playing & Recently Downloaded */}
                     {state.phase === "idle" && (
                       <RecentAndActiveSection
@@ -441,7 +582,7 @@ function HomePageContent() {
                         currentFile={currentPlayingFile}
                         recentFiles={recentFiles}
                         totalCount={historyCount}
-                        onPlayTrack={(file) => handlePlayTrack(file, recentFiles)}
+                        onPlayTrack={(file) => handlePlayTrack(file, recentFiles, "Recently Downloaded")}
                         onOpenPlayer={() => setActiveTab("player")}
                         onViewLibrary={() => setActiveTab("history")}
                       />
@@ -544,24 +685,34 @@ function HomePageContent() {
               currentFile={currentPlayingFile}
               allFiles={allDownloadedFiles}
               playlist={playerQueue.length > 0 ? playerQueue : allDownloadedFiles}
+              playlistName={activePlaylistName}
               onSelectTrack={(file) => setCurrentPlayingFile(file)}
               onPlayNext={handlePlayNext}
               onPlayPrev={handlePlayPrev}
               onGoToHistory={() => setActiveTab("history")}
               onPlaybackStateChange={(playing) => setIsPlayerPlaying(playing)}
+              onControlsVisibilityChange={(visible) => setIsBigControlsVisible(visible)}
             />
           </div>
         </div>
       </div>
 
-      {/* Floating Mini Player Bar (Visible on mobile Downloader, Library, and Playlists tabs during playback) */}
-      {activeTab !== "player" && currentPlayingFile && (
+      {/* Floating Mini Player Bar:
+          1) On mobile Downloader, Library, and Playlists tabs during playback
+          2) On mobile Player tab when user scrolls down into queue so big controls are not visible! */}
+      {(activeTab !== "player" || !isBigControlsVisible) && currentPlayingFile && (
         <div className="lg:hidden">
           <MiniPlayerBar
             currentFile={currentPlayingFile}
             isPlaying={isPlayerPlaying}
             onTogglePlayPause={() => playerHandleRef.current?.togglePlayPause()}
-            onOpenPlayer={() => setActiveTab("player")}
+            onOpenPlayer={() => {
+              if (activeTab === "player") {
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              } else {
+                setActiveTab("player");
+              }
+            }}
           />
         </div>
       )}
@@ -576,6 +727,10 @@ function HomePageContent() {
             setDownloadNotification(null);
             setActiveTab("history");
           }}
+          onViewInPlaylists={() => {
+            setDownloadNotification(null);
+            setActiveTab("playlists");
+          }}
         />
       )}
 
@@ -585,6 +740,7 @@ function HomePageContent() {
         onChangeTab={setActiveTab}
         fileCount={historyCount}
         hasActiveTrack={currentPlayingFile !== null}
+        onOpenSettings={() => setIsThemeModalOpen(true)}
       />
 
       {/* Theme Color Selector Modal */}
@@ -604,8 +760,8 @@ function HomePageContent() {
             <span className="font-bold text-white tracking-wide">aryanathreya</span>
           </div>
 
-          {/* Social Links */}
-          <div className="flex items-center gap-5">
+          {/* Social Links & Settings */}
+          <div className="flex items-center gap-4 sm:gap-5 flex-wrap justify-center sm:justify-end">
             <a
               href="https://github.com/aryanathreya"
               target="_blank"
@@ -622,13 +778,28 @@ function HomePageContent() {
               href="https://www.linkedin.com/in/aryanathreya"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-gray-400 hover:text-indigo-400 transition-colors"
+              className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors"
             >
               <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
                 <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
               </svg>
               <span>LinkedIn</span>
             </a>
+
+            {/* Settings & Theme Button (Desktop only - mobile uses floating footer gear button) */}
+            <button
+              id="desktop-footer-settings-button"
+              onClick={() => setIsThemeModalOpen(true)}
+              className="hidden md:flex items-center gap-1.5 py-1 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white transition-all text-xs"
+              title="Settings & Appearance"
+            >
+              <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>Settings</span>
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: config.primaryHex }} />
+            </button>
 
             <span className="text-gray-600 hidden sm:inline">•</span>
 

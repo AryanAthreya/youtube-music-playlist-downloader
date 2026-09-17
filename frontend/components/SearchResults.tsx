@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { SearchResultItem } from "@/lib/types";
 
 interface SearchResultsProps {
@@ -9,6 +10,7 @@ interface SearchResultsProps {
   onSelectVideo: (url: string) => void;
   onPlayPreview?: (item: SearchResultItem) => void;
   onReset: () => void;
+  onLoadMore?: (query: string) => void;
 }
 
 function formatDuration(seconds: number | null): string {
@@ -27,7 +29,10 @@ export function SearchResults({
   onSelectVideo,
   onPlayPreview,
   onReset,
+  onLoadMore,
 }: SearchResultsProps) {
+  const [visible, setVisible] = useState(15);
+
   return (
     <div id={id} className="space-y-4 animate-in fade-in-50 duration-200">
       {/* Header bar */}
@@ -38,7 +43,7 @@ export function SearchResults({
             <span className="text-indigo-400 font-mono">"{query}"</span>
           </h2>
           <p className="text-xs text-gray-400">
-            Found {results.length} related videos. Click any video to select format and download.
+            Showing {Math.min(visible, results.length)} of {results.length} results. Click to select format and download.
           </p>
         </div>
 
@@ -56,90 +61,120 @@ export function SearchResults({
           <p className="text-xs text-gray-500">Try searching for other keywords or paste a direct YouTube URL.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-          {results.map((item) => (
-            <div
-              key={item.video_id}
-              onClick={() => onSelectVideo(item.url)}
-              className="glass-card rounded-xl overflow-hidden hover:border-indigo-500/50 hover:bg-white/[0.04] transition-all duration-200 flex flex-col justify-between group cursor-pointer active:scale-[0.98]"
-            >
-              {/* Thumbnail */}
-              <div className="relative aspect-video bg-slate-950 overflow-hidden">
-                {item.thumbnail ? (
-                  <img
-                    src={item.thumbnail}
-                    alt={item.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-600">
-                    🎬
-                  </div>
-                )}
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {results.slice(0, visible).map((item) => (
+              <div
+                key={item.video_id}
+                className="glass-card rounded-xl overflow-hidden hover:border-indigo-500/50 hover:bg-white/[0.04] transition-all duration-200 flex flex-col justify-between group"
+              >
+                {/* Thumbnail */}
+                <div
+                  className="relative aspect-video bg-slate-950 overflow-hidden cursor-pointer"
+                  onClick={() => onSelectVideo(item.url)}
+                >
+                  {item.thumbnail ? (
+                    <img
+                      src={item.thumbnail}
+                      alt={item.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-gray-600">
+                      🎬
+                    </div>
+                  )}
 
-                {/* Instant Play / Preview Button on Thumbnail */}
-                {onPlayPreview && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onPlayPreview(item);
-                    }}
-                    className="absolute inset-0 m-auto w-12 h-12 rounded-full bg-black/60 hover:bg-red-600 active:scale-90 text-white flex items-center justify-center backdrop-blur-md border border-white/20 opacity-0 group-hover:opacity-100 transition-all shadow-xl"
-                    title="Play / Preview in Player"
-                  >
-                    <svg className="w-5 h-5 ml-0.5 fill-current" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
-                  </button>
-                )}
+                  {/* Instant Play / Preview Button on Thumbnail */}
+                  {onPlayPreview && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onPlayPreview(item);
+                      }}
+                      className="absolute inset-0 m-auto w-12 h-12 rounded-full bg-black/60 hover:bg-red-600 active:scale-90 text-white flex items-center justify-center backdrop-blur-md border border-white/20 opacity-0 group-hover:opacity-100 transition-all shadow-xl"
+                      title="Play / Preview in Player"
+                    >
+                      <svg className="w-5 h-5 ml-0.5 fill-current" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </button>
+                  )}
 
-                {item.duration && (
-                  <span className="absolute bottom-2 right-2 bg-black/85 backdrop-blur-sm text-white text-[10px] font-mono px-1.5 py-0.5 rounded border border-white/10">
-                    {formatDuration(item.duration)}
-                  </span>
-                )}
-              </div>
-
-              {/* Info */}
-              <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
-                <div>
-                  <h3
-                    className="text-xs sm:text-sm font-semibold text-white line-clamp-2 leading-snug group-hover:text-indigo-300 transition-colors"
-                    title={item.title}
-                  >
-                    {item.title}
-                  </h3>
-                  <p className="text-[11px] text-gray-400 mt-1 truncate font-medium">
-                    {item.uploader}
-                  </p>
+                  {item.duration && (
+                    <span className="absolute bottom-2 right-2 bg-black/85 backdrop-blur-sm text-white text-[10px] font-mono px-1.5 py-0.5 rounded border border-white/10">
+                      {formatDuration(item.duration)}
+                    </span>
+                  )}
                 </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-white/[0.06] text-[10px] text-gray-400">
-                  <span>{item.view_count ? `${item.view_count.toLocaleString()} views` : "YouTube"}</span>
-                  
-                  <div className="flex items-center gap-2">
-                    {onPlayPreview && (
+                {/* Info */}
+                <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
+                  <div onClick={() => onSelectVideo(item.url)} className="cursor-pointer">
+                    <h3
+                      className="text-xs sm:text-sm font-semibold text-white line-clamp-2 leading-snug group-hover:text-indigo-300 transition-colors"
+                      title={item.title}
+                    >
+                      {item.title}
+                    </h3>
+                    <p className="text-[11px] text-gray-400 mt-1 truncate font-medium">
+                      {item.uploader}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-white/[0.06] text-[10px] text-gray-400">
+                    <span>{item.view_count ? `${item.view_count.toLocaleString()} views` : "YouTube"}</span>
+                    
+                    <div className="flex items-center gap-1.5">
+                      {onPlayPreview && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onPlayPreview(item);
+                          }}
+                          className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
+                          title="Stream / Preview"
+                        >
+                          <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                        </button>
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          onPlayPreview(item);
+                          onSelectVideo(item.url);
                         }}
-                        className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white font-bold transition-colors"
-                        title="Preview in Player"
+                        className="p-1.5 rounded-lg bg-white/10 hover:bg-indigo-600 text-white transition-colors"
+                        title="Download this track"
                       >
-                        ▶ Play
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
                       </button>
-                    )}
-                    <span className="text-indigo-400 font-bold group-hover:translate-x-0.5 transition-transform">
-                      Download →
-                    </span>
+                    </div>
                   </div>
                 </div>
               </div>
+            ))}
+          </div>
+
+          {/* Load More Button */}
+          {visible < results.length && (
+            <div className="flex justify-center pt-2">
+              <button
+                onClick={() => setVisible((v) => v + 15)}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl glass-card border border-white/10 hover:border-white/20 text-sm font-semibold text-white hover:bg-white/5 active:scale-95 transition-all"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+                Load next {Math.min(15, results.length - visible)} results
+              </button>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   );

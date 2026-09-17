@@ -63,6 +63,7 @@ class ProgressSnapshot:
     # Playlist aggregate fields
     completed_count: int = 0
     total_count: int = 0
+    files: list[str] = field(default_factory=list)
 
 
 @dataclass

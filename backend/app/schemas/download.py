@@ -68,6 +68,7 @@ class ProgressSnapshotSchema(BaseModel):
     filename: str | None = None
     completed_count: int = 0
     total_count: int = 0
+    files: list[str] = []
 
 
 class ChildJobSchema(BaseModel):
