@@ -48,6 +48,10 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
   const [previewFile, setPreviewFile] = useState<FileInfo | null>(null);
   const [copiedFilename, setCopiedFilename] = useState<string | null>(null);
 
+  const [isDeleteMode, setIsDeleteMode] = useState(false);
+  const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set());
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+
   const loadFiles = useCallback(async () => {
     try {
       setError(null);
@@ -68,19 +72,51 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
     return () => clearInterval(interval);
   }, [loadFiles]);
 
-  const handleDelete = async (filename: string) => {
-    if (!confirm(`Are you sure you want to delete "${filename}"?`)) return;
+  const toggleSelectForDelete = (filename: string) => {
+    setSelectedForDelete((prev) => {
+      const next = new Set(prev);
+      if (next.has(filename)) {
+        next.delete(filename);
+      } else {
+        next.add(filename);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedForDelete.size === filteredFiles.length && filteredFiles.length > 0) {
+      setSelectedForDelete(new Set());
+    } else {
+      setSelectedForDelete(new Set(filteredFiles.map((f) => f.filename)));
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedForDelete.size === 0) return;
+    const count = selectedForDelete.size;
+    if (!confirm(`Are you sure you want to permanently delete ${count} selected ${count === 1 ? "file" : "files"}?`)) {
+      return;
+    }
     try {
-      setDeletingFile(filename);
-      await deleteFileByName(filename);
-      setFiles((prev) => prev.filter((f) => f.filename !== filename));
-      if (previewFile?.filename === filename) setPreviewFile(null);
-      onCountChange?.(files.length - 1);
+      setIsBatchDeleting(true);
+      const toDelete = Array.from(selectedForDelete);
+      for (const filename of toDelete) {
+        try {
+          await deleteFileByName(filename);
+        } catch (e) {
+          console.error("Failed to delete", filename, e);
+        }
+      }
+      setFiles((prev) => prev.filter((f) => !selectedForDelete.has(f.filename)));
+      onCountChange?.(files.length - count);
+      setSelectedForDelete(new Set());
+      setIsDeleteMode(false);
     } catch (err: unknown) {
       const e = err as { message?: string };
-      alert(e.message ?? "Failed to delete file");
+      alert(e.message ?? "Failed to delete selected files");
     } finally {
-      setDeletingFile(null);
+      setIsBatchDeleting(false);
     }
   };
 
@@ -110,33 +146,97 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-              <span>Downloaded Files</span>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                {files.length}
-              </span>
+            <h2 className="text-xl font-bold text-white tracking-tight">
+              Downloaded Files
             </h2>
+            {/* Symbol / Icon Refresh button right next to Downloaded Files */}
+            <button
+              id={`${id}-refresh`}
+              onClick={loadFiles}
+              disabled={loading}
+              className="p-1.5 text-zinc-400 hover:text-white rounded-lg hover:bg-white/10 active:scale-95 transition-all"
+              title="Refresh downloaded files"
+            >
+              <svg className={`w-4 h-4 ${loading ? "animate-spin text-red-500" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
           </div>
-          <p className="text-xs text-gray-400 mt-1">
-            Access, play, and save your downloaded media anytime
+          {/* Downloads counter below title */}
+          <p className="text-xs text-zinc-400 mt-1">
+            <span className="font-semibold text-zinc-200">{files.length}</span> {files.length === 1 ? "file" : "files"} downloaded • Access, play, and save your media anytime
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            id={`${id}-refresh`}
-            onClick={loadFiles}
-            disabled={loading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-300 hover:text-white glass-card rounded-lg transition-all hover:border-gray-500 active:scale-95"
-            title="Refresh list"
-          >
-            <svg className={`w-3.5 h-3.5 ${loading ? "animate-spin text-indigo-400" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            <span>Refresh</span>
-          </button>
-        </div>
+        {/* Dedicated Delete Toolbar Button */}
+        {files.length > 0 && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setIsDeleteMode(!isDeleteMode);
+                setSelectedForDelete(new Set());
+              }}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl border transition-all active:scale-95 ${
+                isDeleteMode
+                  ? "bg-red-600 text-white border-red-500 shadow-lg shadow-red-600/30"
+                  : "text-zinc-400 hover:text-red-400 hover:border-red-500/30 border-white/10 bg-white/5"
+              }`}
+              title={isDeleteMode ? "Exit delete mode" : "Select files to delete"}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              <span>{isDeleteMode ? "Exit Delete Mode" : "Delete"}</span>
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Batch Delete Action Bar (Shown when isDeleteMode is active) */}
+      {isDeleteMode && (
+        <div className="p-3 rounded-2xl bg-red-950/40 border border-red-500/30 flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSelectAll}
+              className="text-xs font-semibold text-zinc-300 hover:text-white flex items-center gap-2"
+            >
+              <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${
+                selectedForDelete.size === filteredFiles.length && filteredFiles.length > 0
+                  ? "bg-red-600 border-red-500 text-white"
+                  : "border-white/30 bg-white/5"
+              }`}>
+                {selectedForDelete.size === filteredFiles.length && filteredFiles.length > 0 ? "✓" : ""}
+              </span>
+              <span>Select All</span>
+            </button>
+            <span className="text-xs text-zinc-400">
+              {selectedForDelete.size} of {filteredFiles.length} selected
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setIsDeleteMode(false);
+                setSelectedForDelete(new Set());
+              }}
+              className="px-3 py-1.5 text-xs font-semibold text-zinc-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleBatchDelete}
+              disabled={selectedForDelete.size === 0 || isBatchDeleting}
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold rounded-xl shadow-lg shadow-red-600/30 active:scale-95 transition-all"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              <span>{isBatchDeleting ? "Deleting..." : `Delete (${selectedForDelete.size}) / OK`}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="p-3 text-xs text-red-300 bg-red-950/40 border border-red-800/50 rounded-xl">
@@ -230,15 +330,49 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
             const isVideo = file.media_type === "video" || isVideoFile(file.filename);
             const isAudio = file.media_type === "audio" || isAudioFile(file.filename);
             const downloadUrl = getFileByNameUrl(file.filename);
+            const isSelected = selectedForDelete.has(file.filename);
 
             return (
               <div
                 key={file.filename}
-                className="glass-card rounded-2xl p-3.5 sm:p-4 flex items-center justify-between gap-3 sm:gap-4 hover:border-indigo-500/30 transition-all group"
+                onClick={() => {
+                  if (isDeleteMode) {
+                    toggleSelectForDelete(file.filename);
+                  }
+                }}
+                className={`rounded-2xl p-3.5 sm:p-4 flex items-center justify-between gap-3 sm:gap-4 transition-all group ${
+                  isDeleteMode ? "cursor-pointer" : ""
+                } ${
+                  isSelected
+                    ? "bg-red-950/40 border-2 border-red-500/60 shadow-lg shadow-red-950/30"
+                    : isDeleteMode
+                    ? "glass-card border-white/10 hover:border-red-500/30"
+                    : "glass-card hover:border-indigo-500/30"
+                }`}
               >
+                {/* Delete Mode Selection Checkbox */}
+                {isDeleteMode && (
+                  <div className="pr-1 sm:pr-2 flex items-center shrink-0">
+                    <div
+                      className={`w-5 h-5 rounded-lg border flex items-center justify-center text-xs font-bold transition-all ${
+                        isSelected
+                          ? "bg-red-600 border-red-500 text-white shadow-md shadow-red-600/40"
+                          : "border-white/30 bg-zinc-900/80 group-hover:border-white/50"
+                      }`}
+                    >
+                      {isSelected && "✓"}
+                    </div>
+                  </div>
+                )}
+
                 {/* Thumbnail with Video/Music Symbol Badge */}
                 <div
-                  onClick={() => {
+                  onClick={(e) => {
+                    if (isDeleteMode) {
+                      e.stopPropagation();
+                      toggleSelectForDelete(file.filename);
+                      return;
+                    }
                     if (onPlayTrack) {
                       onPlayTrack(file, filteredFiles);
                     } else {
@@ -246,7 +380,7 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                     }
                   }}
                   className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-slate-950 overflow-hidden shrink-0 border border-white/10 flex items-center justify-center cursor-pointer group-hover:border-indigo-500/50 shadow-md transition-all"
-                  title="Click to play"
+                  title={isDeleteMode ? "Select for deletion" : "Click to play"}
                 >
                   {file.thumbnail_url ? (
                     <img
@@ -282,7 +416,12 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                 {/* File details (Clean Title) */}
                 <div className="flex-1 min-w-0 pr-2">
                   <button
-                    onClick={() => {
+                    onClick={(e) => {
+                      if (isDeleteMode) {
+                        e.stopPropagation();
+                        toggleSelectForDelete(file.filename);
+                        return;
+                      }
                       if (onPlayTrack) {
                         onPlayTrack(file, filteredFiles);
                       } else {
@@ -290,7 +429,7 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                       }
                     }}
                     className="text-left font-semibold text-xs sm:text-sm text-white group-hover:text-indigo-300 hover:underline truncate block w-full transition-colors leading-snug"
-                    title="Click to play in Player"
+                    title={isDeleteMode ? "Select for deletion" : "Click to play in Player"}
                   >
                     {file.clean_title || file.filename}
                   </button>
@@ -306,7 +445,12 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                 </div>
 
                 {/* Action icons on right */}
-                <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                <div
+                  className="flex items-center gap-1 sm:gap-1.5 shrink-0"
+                  onClick={(e) => {
+                    if (isDeleteMode) e.stopPropagation();
+                  }}
+                >
                   {/* Copy Link */}
                   <button
                     onClick={() => handleCopyLink(file.filename)}
@@ -350,18 +494,6 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                     </svg>
                   </a>
-
-                  {/* Delete from disk */}
-                  <button
-                    onClick={() => handleDelete(file.filename)}
-                    disabled={deletingFile === file.filename}
-                    className="p-2 text-gray-500 hover:text-red-400 rounded-lg hover:bg-red-500/10 transition-colors"
-                    title="Delete file from disk"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
                 </div>
               </div>
             );

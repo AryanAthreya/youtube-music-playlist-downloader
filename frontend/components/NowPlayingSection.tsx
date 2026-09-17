@@ -335,37 +335,21 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
     const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
     return (
-      <div id={id} className="w-full space-y-5 animate-in fade-in duration-300">
-        {/* ── TOP NAV / HEADER (Apple / Nothing Minimalist Header) ───────── */}
-        <div className="flex items-center justify-between px-1 pb-1">
-          <button
-            onClick={onGoToHistory}
-            className="flex items-center gap-2 text-xs font-semibold text-zinc-400 hover:text-white transition-colors p-2 -ml-2 rounded-xl hover:bg-white/5 active:scale-95 lg:hidden"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
-            <span>Library</span>
-          </button>
-
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            <h2 className="text-xs font-bold uppercase tracking-widest text-zinc-300">
-              {isVideo ? "Video Player" : "Now Playing"}
-            </h2>
-          </div>
-
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-zinc-300 border border-white/10">
-            {isVideo ? "🎬 VID" : "🎵 MP3"}
-          </span>
-        </div>
-
+      <div id={id} className="w-full space-y-4 animate-in fade-in duration-300">
         {/* ── HERO MEDIA CARD (1:1.15 Modern Ratio, Lower Controls Only) ─── */}
         <div className="relative group">
           {/* Subtle ambient lighting behind hero */}
           <div className="absolute -inset-2 bg-gradient-to-tr from-red-600/20 via-indigo-600/15 to-transparent rounded-[32px] blur-2xl opacity-75 group-hover:opacity-100 transition-opacity" />
 
           <div className="relative w-full aspect-[1/1.1] sm:aspect-[4/3] rounded-3xl overflow-hidden bg-zinc-950 border border-white/10 shadow-2xl flex flex-col justify-end">
+            {/* Media Type Badge on top right of the square (No wasted header row) */}
+            <div className="absolute top-3.5 right-3.5 z-20 pointer-events-none">
+              <span className="px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md text-white border border-white/20 text-[10px] font-mono font-bold tracking-wider flex items-center gap-1 shadow-lg shadow-black/50">
+                <span>{isVideo ? "🎬" : "🎵"}</span>
+                <span>{isVideo ? "VID" : "MP3"}</span>
+              </span>
+            </div>
+
             {isVideo ? (
               /* Video Container - Strictly Display Only (No screen click conflicts) */
               <div className="absolute inset-0 w-full h-full bg-black flex items-center justify-center select-none">
@@ -443,17 +427,6 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
                 {currentFile.clean_title}
               </h1>
             </div>
-
-            {/* Floating Red Circular Shuffle Button */}
-            <button
-              onClick={handleShuffle}
-              className="absolute bottom-5 right-5 z-20 w-12 h-12 rounded-full bg-red-600 hover:bg-red-500 active:scale-90 text-white flex items-center justify-center shadow-xl shadow-red-600/40 border border-white/20 transition-all cursor-pointer"
-              title="Shuffle in current playlist"
-            >
-              <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z" />
-              </svg>
-            </button>
           </div>
         </div>
 
@@ -539,19 +512,34 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
               </svg>
             </button>
 
-            {/* Vertical Volume Adjust Slider Trigger (Hold/Click opens vertical slider) */}
+            {/* Shuffle in Active Playlist (Unified in lower controls bar) */}
+            <button
+              onClick={handleShuffle}
+              disabled={currentPlaylistFiles.length <= 1}
+              className="p-2.5 text-zinc-400 hover:text-white disabled:opacity-30 rounded-full hover:bg-white/5 active:scale-90 transition-all"
+              title="Shuffle in current playlist"
+            >
+              <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z" />
+              </svg>
+            </button>
+
+            {/* Dynamic Volume Control (Double-click: Mute/Unmute, Click/Hold: Adjust vertical slider) */}
             <div id="volume-slider-container" className="relative">
               <button
                 onClick={() => setShowVolumeSlider(!showVolumeSlider)}
+                onDoubleClick={toggleMute}
                 className={`p-2.5 rounded-full transition-colors active:scale-95 ${
                   showVolumeSlider
                     ? "text-red-400 bg-white/10"
+                    : isMuted
+                    ? "text-red-500 bg-red-500/10"
                     : "text-zinc-400 hover:text-white"
                 }`}
-                title="Volume control"
+                title="Double-click to mute/unmute, click/hold to adjust volume"
               >
                 {isMuted || volume === 0 ? (
-                  <svg className="w-5 h-5 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <svg className="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                     <path strokeLinecap="round" strokeLinejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
                   </svg>
@@ -564,7 +552,7 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
 
               {/* Vertical Popover Slider */}
               {showVolumeSlider && (
-                <div className="absolute bottom-12 right-0 sm:right-auto sm:left-1/2 sm:-translate-x-1/2 z-50 bg-zinc-950/95 backdrop-blur-2xl border border-white/20 rounded-2xl p-3 shadow-2xl shadow-black flex flex-col items-center gap-3 animate-in fade-in zoom-in-95 duration-150 w-12">
+                <div className="absolute bottom-14 right-0 z-50 bg-zinc-950/95 backdrop-blur-2xl border border-white/20 rounded-2xl p-3 shadow-2xl shadow-black flex flex-col items-center gap-3 animate-in fade-in zoom-in-95 duration-150 w-12">
                   <span className="text-[10px] font-mono font-bold text-zinc-300">
                     {isMuted ? "0%" : `${Math.round(volume * 100)}%`}
                   </span>
