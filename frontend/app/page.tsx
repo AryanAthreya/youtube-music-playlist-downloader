@@ -49,14 +49,17 @@ export default function HomePage() {
       autoDownloadedJobRef.current = state.jobId;
       const downloadUrl = getFileUrl(state.jobId);
       
-      // Auto-trigger browser download so it shows in Brave/Chrome downloads (Ctrl + J)
+      // Trigger background download so it shows in Brave/Chrome downloads tray without navigating
       try {
-        const link = document.createElement("a");
-        link.href = downloadUrl;
-        link.download = "";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        iframe.src = downloadUrl;
+        document.body.appendChild(iframe);
+        setTimeout(() => {
+          if (document.body.contains(iframe)) {
+            document.body.removeChild(iframe);
+          }
+        }, 8000);
       } catch (err) {
         console.warn("Auto-download trigger:", err);
       }

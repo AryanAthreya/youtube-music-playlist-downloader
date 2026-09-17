@@ -363,7 +363,7 @@ export function FileList({ id, onCountChange }: FileListProps) {
                   controls
                   autoPlay
                   className="max-h-[60vh] w-full rounded-xl outline-none"
-                  src={getFileByNameUrl(previewFile.filename)}
+                  src={getFileByNameUrl(previewFile.filename, true)}
                 >
                   Your browser does not support the video tag.
                 </video>
@@ -376,7 +376,7 @@ export function FileList({ id, onCountChange }: FileListProps) {
                     controls
                     autoPlay
                     className="w-full max-w-md mx-auto outline-none"
-                    src={getFileByNameUrl(previewFile.filename)}
+                    src={getFileByNameUrl(previewFile.filename, true)}
                   >
                     Your browser does not support the audio tag.
                   </audio>

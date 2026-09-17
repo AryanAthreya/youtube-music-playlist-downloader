@@ -150,12 +150,13 @@ def _parse_range_header(
     return start, end
 
 
-def _build_content_disposition(filename: str, disposition_type: str = "inline") -> str:
+def _build_content_disposition(filename: str, disposition_type: str = "attachment") -> str:
     """Build an RFC 6266 / RFC 5987 compliant Content-Disposition header value.
 
     Avoids UnicodeEncodeError: 'latin-1' codec crashes in Starlette by stripping
     non-ASCII characters from the fallback filename, and encoding full UTF-8
-    in the filename* parameter. Uses 'inline' to allow in-browser playback.
+    in the filename* parameter. Defaults to 'attachment' so browser triggers
+    actual download instead of auto-playing the media.
     """
     # ASCII-only fallback filename
     ascii_name = filename.encode("ascii", "ignore").decode("ascii").strip()
@@ -168,12 +169,17 @@ def _build_content_disposition(filename: str, disposition_type: str = "inline") 
     return f"{disposition_type}; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted_name}"
 
 
-async def _serve_file(file_path: Path, range_header: str | None) -> Response:
+async def _serve_file(
+    file_path: Path,
+    range_header: str | None,
+    disposition: str = "attachment",
+) -> Response:
     """Build a Range-aware streaming response for a file.
 
     Args:
         file_path: Absolute path to the file to serve.
         range_header: Value of the HTTP Range header (or None for full file).
+        disposition: 'attachment' (download file) or 'inline' (browser player stream).
 
     Returns:
         Response: A StreamingResponse with appropriate headers.
@@ -197,7 +203,7 @@ async def _serve_file(file_path: Path, range_header: str | None) -> Response:
     is_partial = start != 0 or end != file_size - 1
 
     headers = {
-        "Content-Disposition": _build_content_disposition(file_path.name, "inline"),
+        "Content-Disposition": _build_content_disposition(file_path.name, disposition),
         "Content-Length": str(content_length),
         "Accept-Ranges": "bytes",
         "Content-Range": f"bytes {start}-{end}/{file_size}",
@@ -217,6 +223,7 @@ async def _serve_file(file_path: Path, range_header: str | None) -> Response:
 async def serve_job_file(
     job_id: str,
     range: str | None = Header(default=None),
+    stream: bool = False,
 ) -> Response:
     """Serve the completed download file for a job (Range-aware).
 
@@ -227,6 +234,8 @@ async def serve_job_file(
     Args:
         job_id: UUID string for the job.
         range: HTTP Range header value (optional).
+        stream: If True, uses 'inline' Content-Disposition for browser playback;
+                if False (default), uses 'attachment' to download to disk.
 
     Returns:
         Response: Streaming file response with Range support.
@@ -244,7 +253,8 @@ async def serve_job_file(
             job_id=job_id,
         )
 
-    return await _serve_file(job.file_path, range)
+    disposition = "inline" if stream else "attachment"
+    return await _serve_file(job.file_path, range, disposition=disposition)
 
 
 @router.get("/files", response_model=FilesListResponse)
@@ -265,6 +275,7 @@ async def list_files() -> FilesListResponse:
 async def serve_file_by_name(
     filename: str,
     range: str | None = Header(default=None),
+    stream: bool = False,
 ) -> Response:
     """Serve a completed file by filename (Range-aware).
 
@@ -277,6 +288,8 @@ async def serve_file_by_name(
     Args:
         filename: Filename in the completed/ directory.
         range: HTTP Range header value (optional).
+        stream: If True, uses 'inline' for preview playback;
+                if False (default), uses 'attachment' to download.
 
     Returns:
         Response: Streaming file response with Range support.
@@ -297,7 +310,8 @@ async def serve_file_by_name(
             f"Invalid filename: path traversal detected."
         ) from exc
 
-    return await _serve_file(file_path, range)
+    disposition = "inline" if stream else "attachment"
+    return await _serve_file(file_path, range, disposition=disposition)
 
 
 @router.delete("/files/{filename}")

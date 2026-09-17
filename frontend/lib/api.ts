@@ -151,10 +151,12 @@ export async function deleteJob(jobId: string): Promise<void> {
  * Get the download URL for a completed job's file.
  *
  * @param jobId - UUID string for the job.
+ * @param stream - If true, requests inline stream disposition.
  * @returns Full URL to the file (including API base).
  */
-export function getFileUrl(jobId: string): string {
-  return `${API_BASE}/api/download/${jobId}/file`;
+export function getFileUrl(jobId: string, stream: boolean = false): string {
+  const base = `${API_BASE}/api/download/${jobId}/file`;
+  return stream ? `${base}?stream=true` : base;
 }
 
 // ── Files ─────────────────────────────────────────────────────────────────────
@@ -175,10 +177,12 @@ export async function getFiles(): Promise<FilesListResponse> {
  * Get the download URL for a file in the completed/ directory by filename.
  *
  * @param filename - Filename in completed/ (e.g. 'dQw4w9WgXcQ-title.mp4').
+ * @param stream - If true, requests inline stream disposition.
  * @returns Full URL to the file.
  */
-export function getFileByNameUrl(filename: string): string {
-  return `${API_BASE}/api/files/${encodeURIComponent(filename)}`;
+export function getFileByNameUrl(filename: string, stream: boolean = false): string {
+  const base = `${API_BASE}/api/files/${encodeURIComponent(filename)}`;
+  return stream ? `${base}?stream=true` : base;
 }
 
 /**
