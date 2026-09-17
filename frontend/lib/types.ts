@@ -206,3 +206,14 @@ export interface APIError {
   message: string;        // Human-readable message
   job_id?: string;
 }
+
+// ── Playlists in Player ───────────────────────────────────────────────────────
+
+export interface UserPlaylist {
+  id: string;
+  name: string;
+  isSystem?: boolean;
+  filterType?: "all" | "audio" | "video";
+  songFilenames: string[]; // unique filenames inside this playlist
+}
+

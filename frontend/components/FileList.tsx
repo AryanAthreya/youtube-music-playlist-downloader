@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { getFiles, getFileByNameUrl, deleteFileByName } from "@/lib/api";
+import { getFiles, getFileByNameUrl, deleteFileByName, resolveMediaUrl } from "@/lib/api";
 import { formatFileSize } from "@/lib/websocket";
 import type { FileInfo } from "@/lib/types";
 
@@ -250,7 +250,7 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                 >
                   {file.thumbnail_url ? (
                     <img
-                      src={file.thumbnail_url}
+                      src={resolveMediaUrl(file.thumbnail_url)}
                       alt={file.clean_title || file.filename}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       loading="lazy"

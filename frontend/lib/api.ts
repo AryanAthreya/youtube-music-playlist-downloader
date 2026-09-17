@@ -196,6 +196,16 @@ export async function deleteFileByName(filename: string): Promise<{ message: str
   });
 }
 
+/**
+ * Resolve relative media / thumbnail URLs to full API URLs with API_BASE.
+ */
+export function resolveMediaUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  const clean = url.startsWith("/") ? url : `/${url}`;
+  return `${API_BASE}${clean}`;
+}
+
 // ── Health ────────────────────────────────────────────────────────────────────
 
 /**

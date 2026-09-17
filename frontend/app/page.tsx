@@ -41,6 +41,7 @@ export default function HomePage() {
   const [wsHandle, setWsHandle] = useState<{ close: () => void } | null>(null);
   const [historyCount, setHistoryCount] = useState<number>(0);
   const [recentFiles, setRecentFiles] = useState<FileInfo[]>([]);
+  const [allDownloadedFiles, setAllDownloadedFiles] = useState<FileInfo[]>([]);
   const [currentPlayingFile, setCurrentPlayingFile] = useState<FileInfo | null>(null);
   const [playerQueue, setPlayerQueue] = useState<FileInfo[]>([]);
   const [isPlayerPlaying, setIsPlayerPlaying] = useState<boolean>(true);
@@ -51,12 +52,20 @@ export default function HomePage() {
   } | null>(null);
   const autoDownloadedJobRef = useRef<string | null>(null);
 
-  // Fetch recent files and update count
+  // Fetch all and recent files and update count
   const refreshFiles = useCallback(() => {
     getFiles()
       .then((res) => {
         setHistoryCount(res.files.length);
         setRecentFiles(res.files);
+        setAllDownloadedFiles(res.files);
+        setCurrentPlayingFile((curr) => {
+          if (!curr && res.files.length > 0) {
+            setPlayerQueue(res.files);
+            return res.files[0];
+          }
+          return curr;
+        });
       })
       .catch(() => {});
   }, []);
@@ -496,7 +505,8 @@ export default function HomePage() {
             ref={playerHandleRef}
             id="now-playing-section"
             currentFile={currentPlayingFile}
-            playlist={playerQueue}
+            allFiles={allDownloadedFiles}
+            playlist={playerQueue.length > 0 ? playerQueue : allDownloadedFiles}
             onSelectTrack={(file) => setCurrentPlayingFile(file)}
             onPlayNext={handlePlayNext}
             onPlayPrev={handlePlayPrev}

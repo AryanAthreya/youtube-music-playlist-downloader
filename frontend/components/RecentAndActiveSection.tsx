@@ -1,7 +1,7 @@
 "use client";
-
 import type { FileInfo } from "@/lib/types";
 import { formatFileSize } from "@/lib/websocket";
+import { resolveMediaUrl } from "@/lib/api";
 
 interface RecentAndActiveSectionProps {
   id: string;
@@ -34,7 +34,7 @@ export function RecentAndActiveSection({
               <div className="relative w-14 h-14 rounded-xl overflow-hidden bg-slate-850 shrink-0 shadow-md border border-white/10">
                 {currentFile.thumbnail_url ? (
                   <img
-                    src={currentFile.thumbnail_url}
+                    src={resolveMediaUrl(currentFile.thumbnail_url)}
                     alt={currentFile.clean_title}
                     className="w-full h-full object-cover"
                   />
@@ -121,7 +121,7 @@ export function RecentAndActiveSection({
                 >
                   {file.thumbnail_url ? (
                     <img
-                      src={file.thumbnail_url}
+                      src={resolveMediaUrl(file.thumbnail_url)}
                       alt={file.clean_title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />

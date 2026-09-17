@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useImperativeHandle, forwardRef } from "react";
 import type { FileInfo } from "@/lib/types";
-import { getFileByNameUrl } from "@/lib/api";
+import { getFileByNameUrl, resolveMediaUrl } from "@/lib/api";
 import { formatFileSize } from "@/lib/websocket";
 
 export interface NowPlayingSectionHandle {
@@ -11,9 +11,16 @@ export interface NowPlayingSectionHandle {
   playPrev: () => void;
 }
 
+interface CustomPlaylist {
+  id: string;
+  name: string;
+  songFilenames: string[];
+}
+
 interface NowPlayingSectionProps {
   id: string;
   currentFile: FileInfo | null;
+  allFiles: FileInfo[];
   playlist: FileInfo[];
   onSelectTrack: (file: FileInfo) => void;
   onPlayNext: () => void;
@@ -29,11 +36,14 @@ function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+const LOCAL_STORAGE_PLAYLISTS_KEY = "ytdl_user_playlists_v1";
+
 export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingSectionProps>(
   function NowPlayingSection(
     {
       id,
       currentFile,
+      allFiles,
       playlist,
       onSelectTrack,
       onPlayNext,
@@ -52,7 +62,36 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
     const [isRepeat, setIsRepeat] = useState(false);
     const [volume, setVolume] = useState(1);
     const [isMuted, setIsMuted] = useState(false);
-    const [tapFeedback, setTapFeedback] = useState<"play" | "pause" | null>(null);
+    const [showVolumeSlider, setShowVolumeSlider] = useState(false);
+
+    // Playlists state
+    const [customPlaylists, setCustomPlaylists] = useState<CustomPlaylist[]>([]);
+    const [activePlaylistTab, setActivePlaylistTab] = useState<string>("all");
+    const [showNewPlaylistModal, setShowNewPlaylistModal] = useState(false);
+    const [newPlaylistName, setNewPlaylistName] = useState("");
+    const [addToPlaylistTrack, setAddToPlaylistTrack] = useState<FileInfo | null>(null);
+
+    // Load custom playlists from localStorage
+    useEffect(() => {
+      try {
+        const stored = localStorage.getItem(LOCAL_STORAGE_PLAYLISTS_KEY);
+        if (stored) {
+          setCustomPlaylists(JSON.parse(stored));
+        }
+      } catch (e) {
+        console.warn("Failed to load custom playlists:", e);
+      }
+    }, []);
+
+    // Save custom playlists to localStorage
+    const saveCustomPlaylists = (updated: CustomPlaylist[]) => {
+      setCustomPlaylists(updated);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_PLAYLISTS_KEY, JSON.stringify(updated));
+      } catch (e) {
+        console.warn("Failed to save custom playlists:", e);
+      }
+    };
 
     const isVideo =
       currentFile?.media_type === "video" ||
@@ -60,7 +99,7 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
       currentFile?.filename.toLowerCase().endsWith(".webm") ||
       currentFile?.filename.toLowerCase().endsWith(".mkv");
 
-    // Sync isPlaying when track changes
+    // Sync playback when track changes
     useEffect(() => {
       setIsPlaying(true);
       setCurrentTime(0);
@@ -75,17 +114,14 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
         el.pause();
         setIsPlaying(false);
         onPlaybackStateChange?.(false);
-        setTapFeedback("pause");
       } else {
         el.play().catch(() => {});
         setIsPlaying(true);
         onPlaybackStateChange?.(true);
-        setTapFeedback("play");
       }
-      setTimeout(() => setTapFeedback(null), 700);
     }, [isPlaying, isVideo, onPlaybackStateChange]);
 
-    // Expose handle to parent (e.g. for mini-player control)
+    // Expose handle to parent
     useImperativeHandle(ref, () => ({
       togglePlayPause,
       playNext: onPlayNext,
@@ -133,6 +169,29 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
       }
     };
 
+    const handleVolumeChange = (newVal: number) => {
+      setVolume(newVal);
+      setIsMuted(newVal === 0);
+      const el = isVideo ? videoRef.current : audioRef.current;
+      if (el) el.volume = newVal;
+    };
+
+    // Close volume slider when clicked outside
+    useEffect(() => {
+      const handleClickOutside = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        if (!target.closest("#volume-slider-container")) {
+          setShowVolumeSlider(false);
+        }
+      };
+      if (showVolumeSlider) {
+        document.addEventListener("mousedown", handleClickOutside);
+      }
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside);
+      };
+    }, [showVolumeSlider]);
+
     const handleEnded = () => {
       if (isRepeat) {
         const el = isVideo ? videoRef.current : audioRef.current;
@@ -141,16 +200,109 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
           el.play().catch(() => {});
         }
       } else {
+        handlePlayNextInActivePlaylist();
+      }
+    };
+
+    // ── Playlist Filtering & Cycling ──────────────────────────────────────────
+    // Base source of files: use allFiles if available, else playlist
+    const sourceFiles = allFiles && allFiles.length > 0 ? allFiles : playlist;
+
+    const currentPlaylistFiles: FileInfo[] = (() => {
+      if (activePlaylistTab === "all") {
+        return sourceFiles;
+      }
+      if (activePlaylistTab === "music") {
+        return sourceFiles.filter(
+          (f) => f.media_type === "audio" || !f.filename.toLowerCase().endsWith(".mp4")
+        );
+      }
+      if (activePlaylistTab === "videos") {
+        return sourceFiles.filter(
+          (f) => f.media_type === "video" || f.filename.toLowerCase().endsWith(".mp4")
+        );
+      }
+      // Custom playlist
+      const cp = customPlaylists.find((p) => p.id === activePlaylistTab);
+      if (cp) {
+        return sourceFiles.filter((f) => cp.songFilenames.includes(f.filename));
+      }
+      return sourceFiles;
+    })();
+
+    const handlePlayNextInActivePlaylist = () => {
+      if (!currentFile || currentPlaylistFiles.length === 0) {
         onPlayNext();
+        return;
+      }
+      const idx = currentPlaylistFiles.findIndex((f) => f.filename === currentFile.filename);
+      if (idx >= 0 && idx < currentPlaylistFiles.length - 1) {
+        onSelectTrack(currentPlaylistFiles[idx + 1]);
+      } else if (currentPlaylistFiles.length > 0) {
+        onSelectTrack(currentPlaylistFiles[0]);
+      }
+    };
+
+    const handlePlayPrevInActivePlaylist = () => {
+      if (!currentFile || currentPlaylistFiles.length === 0) {
+        onPlayPrev();
+        return;
+      }
+      const idx = currentPlaylistFiles.findIndex((f) => f.filename === currentFile.filename);
+      if (idx > 0) {
+        onSelectTrack(currentPlaylistFiles[idx - 1]);
+      } else if (currentPlaylistFiles.length > 0) {
+        onSelectTrack(currentPlaylistFiles[currentPlaylistFiles.length - 1]);
       }
     };
 
     const handleShuffle = () => {
-      if (playlist.length <= 1) return;
-      const candidates = playlist.filter((f) => f.filename !== currentFile?.filename);
+      if (currentPlaylistFiles.length <= 1) return;
+      const candidates = currentPlaylistFiles.filter((f) => f.filename !== currentFile?.filename);
       if (candidates.length > 0) {
         const randomIndex = Math.floor(Math.random() * candidates.length);
         onSelectTrack(candidates[randomIndex]);
+      }
+    };
+
+    // Create New Custom Playlist
+    const handleCreatePlaylist = (e: React.FormEvent) => {
+      e.preventDefault();
+      const trimmed = newPlaylistName.trim();
+      if (!trimmed) return;
+      const newPlaylist: CustomPlaylist = {
+        id: `pl-${Date.now()}`,
+        name: trimmed,
+        songFilenames: currentFile ? [currentFile.filename] : [],
+      };
+      const updated = [...customPlaylists, newPlaylist];
+      saveCustomPlaylists(updated);
+      setActivePlaylistTab(newPlaylist.id);
+      setNewPlaylistName("");
+      setShowNewPlaylistModal(false);
+    };
+
+    // Toggle track in a custom playlist (unique in that playlist)
+    const toggleTrackInPlaylist = (playlistId: string, filename: string) => {
+      const updated = customPlaylists.map((pl) => {
+        if (pl.id !== playlistId) return pl;
+        const exists = pl.songFilenames.includes(filename);
+        return {
+          ...pl,
+          songFilenames: exists
+            ? pl.songFilenames.filter((f) => f !== filename)
+            : [...pl.songFilenames, filename],
+        };
+      });
+      saveCustomPlaylists(updated);
+    };
+
+    // Delete custom playlist
+    const handleDeletePlaylist = (playlistId: string) => {
+      const updated = customPlaylists.filter((pl) => pl.id !== playlistId);
+      saveCustomPlaylists(updated);
+      if (activePlaylistTab === playlistId) {
+        setActivePlaylistTab("all");
       }
     };
 
@@ -208,18 +360,15 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
           </span>
         </div>
 
-        {/* ── HERO MEDIA CARD (Pleasant 1:1.15 Square Ratio, Blended Typography) */}
+        {/* ── HERO MEDIA CARD (1:1.15 Modern Ratio, Lower Controls Only) ─── */}
         <div className="relative group">
           {/* Subtle ambient lighting behind hero */}
           <div className="absolute -inset-2 bg-gradient-to-tr from-red-600/20 via-indigo-600/15 to-transparent rounded-[32px] blur-2xl opacity-75 group-hover:opacity-100 transition-opacity" />
 
           <div className="relative w-full aspect-[1/1.1] sm:aspect-[4/3] rounded-3xl overflow-hidden bg-zinc-950 border border-white/10 shadow-2xl flex flex-col justify-end">
             {isVideo ? (
-              /* Video Container */
-              <div
-                onClick={togglePlayPause}
-                className="absolute inset-0 w-full h-full bg-black cursor-pointer flex items-center justify-center"
-              >
+              /* Video Container - Strictly Display Only (No screen click conflicts) */
+              <div className="absolute inset-0 w-full h-full bg-black flex items-center justify-center select-none">
                 <video
                   ref={videoRef}
                   key={currentFile.filename}
@@ -229,24 +378,20 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
                   onTimeUpdate={handleTimeUpdate}
                   onLoadedMetadata={handleLoadedMetadata}
                   onEnded={handleEnded}
-                  className="w-full h-full object-contain"
+                  onPlay={() => {
+                    setIsPlaying(true);
+                    onPlaybackStateChange?.(true);
+                  }}
+                  onPause={() => {
+                    setIsPlaying(false);
+                    onPlaybackStateChange?.(false);
+                  }}
+                  className="w-full h-full object-contain pointer-events-none"
                 />
-
-                {/* Tap Feedback Indicator */}
-                {tapFeedback && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 pointer-events-none animate-in fade-in zoom-in-75 duration-200">
-                    <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white text-2xl shadow-xl">
-                      {tapFeedback === "play" ? "▶" : "❚❚"}
-                    </div>
-                  </div>
-                )}
               </div>
             ) : (
               /* Music Artwork Container */
-              <div
-                onClick={togglePlayPause}
-                className="absolute inset-0 w-full h-full cursor-pointer overflow-hidden flex items-center justify-center bg-zinc-900"
-              >
+              <div className="absolute inset-0 w-full h-full overflow-hidden flex items-center justify-center bg-zinc-900 select-none">
                 {/* Hidden Audio Element */}
                 <audio
                   ref={audioRef}
@@ -256,11 +401,19 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
                   onTimeUpdate={handleTimeUpdate}
                   onLoadedMetadata={handleLoadedMetadata}
                   onEnded={handleEnded}
+                  onPlay={() => {
+                    setIsPlaying(true);
+                    onPlaybackStateChange?.(true);
+                  }}
+                  onPause={() => {
+                    setIsPlaying(false);
+                    onPlaybackStateChange?.(false);
+                  }}
                 />
 
                 {currentFile.thumbnail_url ? (
                   <img
-                    src={currentFile.thumbnail_url}
+                    src={resolveMediaUrl(currentFile.thumbnail_url)}
                     alt={currentFile.clean_title}
                     className={`w-full h-full object-cover transition-transform duration-700 ${
                       isPlaying ? "scale-105" : "scale-100 opacity-85"
@@ -274,7 +427,7 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
               </div>
             )}
 
-            {/* Blended Dark Vignette with Full Song Name & Metadata (Reference Image 2/3 style) */}
+            {/* Blended Dark Vignette with Full Song Name & Metadata */}
             <div className="relative z-10 p-5 sm:p-6 bg-gradient-to-t from-black/95 via-black/70 to-transparent pt-16 pointer-events-none">
               <div className="flex items-center gap-2 pb-1.5">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-red-400">
@@ -291,11 +444,11 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
               </h1>
             </div>
 
-            {/* Floating Red Circular Action/Shuffle Button (Directly from Reference Image 2) */}
+            {/* Floating Red Circular Shuffle Button */}
             <button
               onClick={handleShuffle}
               className="absolute bottom-5 right-5 z-20 w-12 h-12 rounded-full bg-red-600 hover:bg-red-500 active:scale-90 text-white flex items-center justify-center shadow-xl shadow-red-600/40 border border-white/20 transition-all cursor-pointer"
-              title="Shuffle next track"
+              title="Shuffle in current playlist"
             >
               <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
                 <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z" />
@@ -329,7 +482,7 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
           </div>
 
           {/* Minimalist Apple / Nothing Transport Controls */}
-          <div className="flex items-center justify-between sm:justify-around px-2 pt-1">
+          <div className="flex items-center justify-between sm:justify-around px-2 pt-1 relative">
             {/* Repeat Toggle */}
             <button
               onClick={() => setIsRepeat(!isRepeat)}
@@ -347,8 +500,8 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
 
             {/* Previous Track */}
             <button
-              onClick={onPlayPrev}
-              disabled={playlist.length <= 1}
+              onClick={handlePlayPrevInActivePlaylist}
+              disabled={currentPlaylistFiles.length <= 1}
               className="p-3 text-zinc-300 hover:text-white disabled:opacity-30 rounded-full hover:bg-white/5 active:scale-90 transition-all"
               title="Previous Track"
             >
@@ -357,7 +510,7 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
               </svg>
             </button>
 
-            {/* Center Circular Play/Pause (Red Coral Accent from Image 2) */}
+            {/* Center Circular Play/Pause (Exclusively controls video and music) */}
             <button
               onClick={togglePlayPause}
               className="w-16 h-16 rounded-full bg-red-600 hover:bg-red-500 active:scale-95 text-white flex items-center justify-center shadow-xl shadow-red-600/35 border border-white/20 transition-all"
@@ -376,8 +529,8 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
 
             {/* Next Track */}
             <button
-              onClick={onPlayNext}
-              disabled={playlist.length <= 1}
+              onClick={handlePlayNextInActivePlaylist}
+              disabled={currentPlaylistFiles.length <= 1}
               className="p-3 text-zinc-300 hover:text-white disabled:opacity-30 rounded-full hover:bg-white/5 active:scale-90 transition-all"
               title="Next Track"
             >
@@ -386,112 +539,360 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
               </svg>
             </button>
 
-            {/* Volume Toggle */}
-            <button
-              onClick={toggleMute}
-              className="p-2.5 text-zinc-400 hover:text-white rounded-full transition-colors active:scale-95"
-              title={isMuted ? "Unmute" : "Mute"}
-            >
-              {isMuted || volume === 0 ? (
-                <svg className="w-5 h-5 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-                </svg>
-              ) : (
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                </svg>
+            {/* Vertical Volume Adjust Slider Trigger (Hold/Click opens vertical slider) */}
+            <div id="volume-slider-container" className="relative">
+              <button
+                onClick={() => setShowVolumeSlider(!showVolumeSlider)}
+                className={`p-2.5 rounded-full transition-colors active:scale-95 ${
+                  showVolumeSlider
+                    ? "text-red-400 bg-white/10"
+                    : "text-zinc-400 hover:text-white"
+                }`}
+                title="Volume control"
+              >
+                {isMuted || volume === 0 ? (
+                  <svg className="w-5 h-5 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                  </svg>
+                )}
+              </button>
+
+              {/* Vertical Popover Slider */}
+              {showVolumeSlider && (
+                <div className="absolute bottom-12 right-0 sm:right-auto sm:left-1/2 sm:-translate-x-1/2 z-50 bg-zinc-950/95 backdrop-blur-2xl border border-white/20 rounded-2xl p-3 shadow-2xl shadow-black flex flex-col items-center gap-3 animate-in fade-in zoom-in-95 duration-150 w-12">
+                  <span className="text-[10px] font-mono font-bold text-zinc-300">
+                    {isMuted ? "0%" : `${Math.round(volume * 100)}%`}
+                  </span>
+
+                  <div className="h-28 flex items-center justify-center">
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.02}
+                      value={isMuted ? 0 : volume}
+                      onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                      className="w-24 h-2 accent-red-500 cursor-pointer -rotate-90 origin-center bg-white/10 rounded-lg appearance-none"
+                    />
+                  </div>
+
+                  <button
+                    onClick={toggleMute}
+                    className="text-[10px] font-bold text-zinc-400 hover:text-white"
+                  >
+                    {isMuted ? "Unmute" : "Mute"}
+                  </button>
+                </div>
               )}
-            </button>
+            </div>
           </div>
         </div>
 
-        {/* ── SLIDE-UP PLAYLIST SHEET (Reference Image 2 Style) ─────────── */}
-        <div className="pt-2 space-y-3">
-          {/* Section Header with track count */}
+        {/* ── PLAYLISTS & QUEUE SECTION ─────────────────────────────────── */}
+        <div className="pt-2 space-y-4">
+          {/* Section Header */}
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
               <h3 className="text-sm sm:text-base font-bold text-white tracking-tight">
-                Playlist & Queue
+                Playlists & Queue
               </h3>
             </div>
-            <span className="text-xs text-zinc-400 font-medium">
-              {playlist.length} {playlist.length === 1 ? "track" : "tracks"} available
-            </span>
+            <button
+              onClick={() => setShowNewPlaylistModal(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 text-xs font-semibold active:scale-95 transition-all"
+            >
+              <span>+ New Playlist</span>
+            </button>
           </div>
 
-          {/* Minimalist Numbered Playlist Items (Image 2 style) */}
-          <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1">
-            {playlist.map((track, idx) => {
-              const isActive = track.filename === currentFile.filename;
-              return (
-                <div
-                  key={track.filename}
-                  onClick={() => onSelectTrack(track)}
-                  className={`group relative flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-all ${
-                    isActive
-                      ? "bg-red-950/30 border border-red-500/30 shadow-md shadow-red-950/20"
-                      : "bg-zinc-900/40 hover:bg-zinc-850/70 border border-transparent hover:border-white/[0.08]"
+          {/* Horizontal Playlist Selector Pills */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+            {/* Fixed 1: All Downloads */}
+            <button
+              onClick={() => setActivePlaylistTab("all")}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                activePlaylistTab === "all"
+                  ? "bg-red-600 text-white shadow-md shadow-red-600/20"
+                  : "bg-zinc-900 text-zinc-400 hover:text-white border border-white/5"
+              }`}
+            >
+              📥 All Downloads ({sourceFiles.length})
+            </button>
+
+            {/* Fixed 2: Music Only */}
+            <button
+              onClick={() => setActivePlaylistTab("music")}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                activePlaylistTab === "music"
+                  ? "bg-red-600 text-white shadow-md shadow-red-600/20"
+                  : "bg-zinc-900 text-zinc-400 hover:text-white border border-white/5"
+              }`}
+            >
+              🎵 Music (
+              {
+                sourceFiles.filter(
+                  (f) => f.media_type === "audio" || !f.filename.toLowerCase().endsWith(".mp4")
+                ).length
+              }
+              )
+            </button>
+
+            {/* Fixed 3: Videos Only */}
+            <button
+              onClick={() => setActivePlaylistTab("videos")}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                activePlaylistTab === "videos"
+                  ? "bg-red-600 text-white shadow-md shadow-red-600/20"
+                  : "bg-zinc-900 text-zinc-400 hover:text-white border border-white/5"
+              }`}
+            >
+              🎬 Videos (
+              {
+                sourceFiles.filter(
+                  (f) => f.media_type === "video" || f.filename.toLowerCase().endsWith(".mp4")
+                ).length
+              }
+              )
+            </button>
+
+            {/* Custom User Playlists */}
+            {customPlaylists.map((pl) => (
+              <div key={pl.id} className="relative flex items-center shrink-0 group">
+                <button
+                  onClick={() => setActivePlaylistTab(pl.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                    activePlaylistTab === pl.id
+                      ? "bg-red-600 text-white shadow-md shadow-red-600/20"
+                      : "bg-zinc-900 text-zinc-400 hover:text-white border border-white/5"
                   }`}
                 >
-                  <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                    {/* Track Number / Playing indicator */}
-                    <span className="w-5 text-center text-xs font-mono font-bold text-zinc-500 shrink-0">
-                      {isActive ? (
-                        <span className="text-red-400 animate-pulse">▶</span>
-                      ) : (
-                        `${idx + 1}.`
-                      )}
-                    </span>
+                  🌟 {pl.name} ({pl.songFilenames.length})
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm(`Delete playlist "${pl.name}"?`)) {
+                      handleDeletePlaylist(pl.id);
+                    }
+                  }}
+                  className="ml-1 text-zinc-500 hover:text-red-400 text-xs p-1 rounded"
+                  title="Delete playlist"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
 
-                    {/* Circular / Rounded Avatar */}
-                    <div className="relative w-11 h-11 rounded-xl overflow-hidden bg-zinc-950 shrink-0 shadow border border-white/10">
-                      {track.thumbnail_url ? (
-                        <img
-                          src={track.thumbnail_url}
-                          alt={track.clean_title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-sm bg-zinc-900">
-                          {track.media_type === "video" ? "🎬" : "🎵"}
-                        </div>
-                      )}
+          {/* Numbered Playlist Items (Image 2 style) */}
+          <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1">
+            {currentPlaylistFiles.length === 0 ? (
+              <div className="p-8 text-center rounded-2xl bg-zinc-900/30 border border-white/5 space-y-2">
+                <p className="text-sm text-zinc-400">No tracks in this playlist yet.</p>
+                <p className="text-xs text-zinc-500">
+                  Add tracks from "All Downloads" using the "+ Playlist" button.
+                </p>
+              </div>
+            ) : (
+              currentPlaylistFiles.map((track, idx) => {
+                const isActive = track.filename === currentFile.filename;
+                return (
+                  <div
+                    key={track.filename}
+                    onClick={() => onSelectTrack(track)}
+                    className={`group relative flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-all ${
+                      isActive
+                        ? "bg-red-950/30 border border-red-500/30 shadow-md shadow-red-950/20"
+                        : "bg-zinc-900/40 hover:bg-zinc-850/70 border border-transparent hover:border-white/[0.08]"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                      {/* Track Number / Playing indicator */}
+                      <span className="w-5 text-center text-xs font-mono font-bold text-zinc-500 shrink-0">
+                        {isActive ? (
+                          <span className="text-red-400 animate-pulse">▶</span>
+                        ) : (
+                          `${idx + 1}.`
+                        )}
+                      </span>
+
+                      {/* Rounded Thumbnail Avatar */}
+                      <div className="relative w-11 h-11 rounded-xl overflow-hidden bg-zinc-950 shrink-0 shadow border border-white/10">
+                        {track.thumbnail_url ? (
+                          <img
+                            src={resolveMediaUrl(track.thumbnail_url)}
+                            alt={track.clean_title}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-sm bg-zinc-900">
+                            {track.media_type === "video" ? "🎬" : "🎵"}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Track Metadata */}
+                      <div className="min-w-0 flex-1">
+                        <h4
+                          className={`text-xs sm:text-sm font-semibold truncate transition-colors ${
+                            isActive ? "text-red-300 font-bold" : "text-zinc-200 group-hover:text-white"
+                          }`}
+                        >
+                          {track.clean_title}
+                        </h4>
+                        <p className="text-[11px] text-zinc-400">
+                          {track.media_type === "video" ? "🎬 Video" : "🎵 Audio"} • {formatFileSize(track.size_bytes)}
+                        </p>
+                      </div>
                     </div>
 
-                    {/* Track Metadata */}
-                    <div className="min-w-0 flex-1">
-                      <h4
-                        className={`text-xs sm:text-sm font-semibold truncate transition-colors ${
-                          isActive ? "text-red-300 font-bold" : "text-zinc-200 group-hover:text-white"
-                        }`}
+                    {/* Right side actions */}
+                    <div className="flex items-center gap-1.5 pl-2" onClick={(e) => e.stopPropagation()}>
+                      {/* Add to Playlist button */}
+                      <button
+                        onClick={() => setAddToPlaylistTrack(track)}
+                        className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
+                        title="Add to playlist"
                       >
-                        {track.clean_title}
-                      </h4>
-                      <p className="text-[11px] text-zinc-400">
-                        {track.media_type === "video" ? "🎬 Video" : "🎵 Audio"} • {formatFileSize(track.size_bytes)}
-                      </p>
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                      </button>
+
+                      {isActive ? (
+                        <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/30">
+                          Playing
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => onSelectTrack(track)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-lg text-zinc-400 hover:text-white"
+                        >
+                          ▶
+                        </button>
+                      )}
                     </div>
                   </div>
-
-                  {/* Right side icon */}
-                  <div className="flex items-center gap-2 pl-2">
-                    {isActive ? (
-                      <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/30">
-                        Playing
-                      </span>
-                    ) : (
-                      <span className="opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-lg text-zinc-400 hover:text-white">
-                        ▶
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </div>
+
+        {/* ── MODAL: Create New Playlist ────────────────────────────────── */}
+        {showNewPlaylistModal && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-200"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowNewPlaylistModal(false);
+            }}
+          >
+            <div className="w-full max-w-sm bg-zinc-900 border border-white/15 rounded-3xl p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-bold text-white">Create New Playlist</h3>
+                <button
+                  onClick={() => setShowNewPlaylistModal(false)}
+                  className="w-7 h-7 rounded-full bg-white/5 flex items-center justify-center text-zinc-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleCreatePlaylist} className="space-y-4">
+                <input
+                  type="text"
+                  placeholder="e.g. Chill Vibes, Workout, Rap"
+                  value={newPlaylistName}
+                  onChange={(e) => setNewPlaylistName(e.target.value)}
+                  autoFocus
+                  className="w-full px-4 py-3 rounded-xl bg-zinc-950 border border-white/10 text-white placeholder-zinc-500 focus:outline-none focus:border-red-500 text-sm"
+                />
+
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPlaylistModal(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold shadow-lg shadow-red-600/30 active:scale-95 transition-all"
+                  >
+                    Create
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ── MODAL: Add Track to Custom Playlist ───────────────────────── */}
+        {addToPlaylistTrack && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-200"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setAddToPlaylistTrack(null);
+            }}
+          >
+            <div className="w-full max-w-sm bg-zinc-900 border border-white/15 rounded-3xl p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="min-w-0 pr-2">
+                  <h3 className="text-sm font-bold text-white truncate">Add to Playlist</h3>
+                  <p className="text-xs text-zinc-400 truncate">{addToPlaylistTrack.clean_title}</p>
+                </div>
+                <button
+                  onClick={() => setAddToPlaylistTrack(null)}
+                  className="w-7 h-7 rounded-full bg-white/5 flex items-center justify-center text-zinc-400 hover:text-white shrink-0"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {customPlaylists.length === 0 ? (
+                <div className="p-4 rounded-xl bg-zinc-950 border border-white/5 text-center space-y-3">
+                  <p className="text-xs text-zinc-400">No custom playlists created yet.</p>
+                  <button
+                    onClick={() => {
+                      setAddToPlaylistTrack(null);
+                      setShowNewPlaylistModal(true);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-bold"
+                  >
+                    + Create a Playlist First
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {customPlaylists.map((pl) => {
+                    const isInPlaylist = pl.songFilenames.includes(addToPlaylistTrack.filename);
+                    return (
+                      <button
+                        key={pl.id}
+                        onClick={() => toggleTrackInPlaylist(pl.id, addToPlaylistTrack.filename)}
+                        className={`w-full flex items-center justify-between p-3 rounded-xl border text-left text-xs font-semibold transition-all ${
+                          isInPlaylist
+                            ? "bg-red-950/40 border-red-500/40 text-red-300"
+                            : "bg-zinc-950/60 border-white/5 text-zinc-300 hover:bg-zinc-800"
+                        }`}
+                      >
+                        <span>🌟 {pl.name}</span>
+                        <span>{isInPlaylist ? "✓ In Playlist" : "+ Add"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }

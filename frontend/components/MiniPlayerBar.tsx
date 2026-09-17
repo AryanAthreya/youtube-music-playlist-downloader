@@ -1,6 +1,6 @@
 "use client";
-
 import type { FileInfo } from "@/lib/types";
+import { resolveMediaUrl } from "@/lib/api";
 
 interface MiniPlayerBarProps {
   currentFile: FileInfo | null;
@@ -28,7 +28,7 @@ export function MiniPlayerBar({
         <div className="relative w-10 h-10 rounded-xl overflow-hidden bg-zinc-900 shrink-0 border border-white/10 shadow">
           {currentFile.thumbnail_url ? (
             <img
-              src={currentFile.thumbnail_url}
+              src={resolveMediaUrl(currentFile.thumbnail_url)}
               alt={currentFile.clean_title}
               className={`w-full h-full object-cover transition-transform ${
                 isPlaying ? "scale-105" : "scale-100 opacity-80"
