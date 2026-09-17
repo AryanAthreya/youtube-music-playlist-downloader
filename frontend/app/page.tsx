@@ -11,6 +11,7 @@ import { SearchResults } from "@/components/SearchResults";
 import { NowPlayingSection } from "@/components/NowPlayingSection";
 import { BottomNavBar } from "@/components/BottomNavBar";
 import { DownloadCompleteNotification } from "@/components/DownloadCompleteNotification";
+import { RecentAndActiveSection } from "@/components/RecentAndActiveSection";
 import { fetchInfo, searchYouTube, createDownload, deleteJob, getFileUrl, getFiles } from "@/lib/api";
 import { createJobWebSocket } from "@/lib/websocket";
 import type {
@@ -38,6 +39,7 @@ export default function HomePage() {
   const [state, setState] = useState<AppState>({ phase: "idle" });
   const [wsHandle, setWsHandle] = useState<{ close: () => void } | null>(null);
   const [historyCount, setHistoryCount] = useState<number>(0);
+  const [recentFiles, setRecentFiles] = useState<FileInfo[]>([]);
   const [currentPlayingFile, setCurrentPlayingFile] = useState<FileInfo | null>(null);
   const [playerQueue, setPlayerQueue] = useState<FileInfo[]>([]);
   const [downloadNotification, setDownloadNotification] = useState<{
@@ -45,6 +47,20 @@ export default function HomePage() {
     frame: WebSocketFrame;
   } | null>(null);
   const autoDownloadedJobRef = useRef<string | null>(null);
+
+  // Fetch recent files and update count
+  const refreshFiles = useCallback(() => {
+    getFiles()
+      .then((res) => {
+        setHistoryCount(res.files.length);
+        setRecentFiles(res.files);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshFiles();
+  }, [refreshFiles]);
 
   // Touch swipe support for switching tabs on mobile
   const touchStartX = useRef<number | null>(null);
@@ -99,13 +115,6 @@ export default function HomePage() {
       setCurrentPlayingFile(playerQueue[playerQueue.length - 1]);
     }
   }, [currentPlayingFile, playerQueue]);
-
-  // Initial file count fetch
-  useEffect(() => {
-    getFiles()
-      .then((res) => setHistoryCount(res.files.length))
-      .catch(() => {});
-  }, []);
 
   // ── Auto trigger browser download when job is done ────────────────────────
   useEffect(() => {
@@ -208,7 +217,7 @@ export default function HomePage() {
             setDownloadNotification({ jobId: job_id, frame });
             setState({ phase: "idle" });
             setWsHandle(null);
-            setHistoryCount((c) => c + 1);
+            refreshFiles();
           },
           (errMsg) => {
             console.warn("WS error:", errMsg);
@@ -368,6 +377,19 @@ export default function HomePage() {
                   onSubmit={handleFetchOrSearch}
                   loading={false}
                 />
+
+                {/* Continue Playing / You are Playing & Recently Downloaded (Temporary: disappears during search/download) */}
+                {state.phase === "idle" && (
+                  <RecentAndActiveSection
+                    id="recent-and-active-section"
+                    currentFile={currentPlayingFile}
+                    recentFiles={recentFiles}
+                    totalCount={historyCount}
+                    onPlayTrack={(file) => handlePlayTrack(file, recentFiles)}
+                    onOpenPlayer={() => setActiveTab("player")}
+                    onViewLibrary={() => setActiveTab("history")}
+                  />
+                )}
               </div>
             )}
 
