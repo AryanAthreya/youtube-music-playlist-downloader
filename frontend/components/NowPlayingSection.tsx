@@ -335,12 +335,12 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
     const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
     return (
-      <div id={id} className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-300">
+      <div id={id} className="w-full space-y-5 animate-in fade-in duration-300">
         {/* ── TOP NAV / HEADER (Apple / Nothing Minimalist Header) ───────── */}
         <div className="flex items-center justify-between px-1 pb-1">
           <button
             onClick={onGoToHistory}
-            className="flex items-center gap-2 text-xs font-semibold text-zinc-400 hover:text-white transition-colors p-2 -ml-2 rounded-xl hover:bg-white/5 active:scale-95"
+            className="flex items-center gap-2 text-xs font-semibold text-zinc-400 hover:text-white transition-colors p-2 -ml-2 rounded-xl hover:bg-white/5 active:scale-95 lg:hidden"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />

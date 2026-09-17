@@ -286,7 +286,7 @@ export default function HomePage() {
         <div className="absolute top-2/3 -left-40 w-96 h-96 bg-red-500/5 rounded-full blur-3xl" />
       </div>
 
-      <div className="relative z-10 w-full max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-1">
+      <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-1">
         {/* Top Header */}
         <header className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-6 mb-6 border-b border-white/[0.06]">
           <div className="flex items-center gap-3">
@@ -311,8 +311,8 @@ export default function HomePage() {
             <button
               onClick={() => setActiveTab("downloader")}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
-                activeTab === "downloader"
-                  ? "bg-gradient-to-r from-red-600 to-indigo-600 text-white shadow-md shadow-red-600/20"
+                activeTab === "downloader" || activeTab === "player"
+                  ? "bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-md shadow-red-600/20"
                   : "text-gray-400 hover:text-white"
               }`}
             >
@@ -341,9 +341,10 @@ export default function HomePage() {
               )}
             </button>
 
+            {/* In desktop view (lg:), Player is permanently docked on the right side! */}
             <button
               onClick={() => setActiveTab("player")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
+              className={`lg:hidden flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
                 activeTab === "player"
                   ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md shadow-purple-600/20"
                   : "text-gray-400 hover:text-white"
@@ -362,168 +363,176 @@ export default function HomePage() {
           </div>
         </header>
 
-        {/* MAIN TAB: DOWNLOADER */}
-        {activeTab === "downloader" && (
-          <div className="space-y-8">
-            {/* Error Banner */}
-            {state.phase === "error" && (
-              <ErrorBanner
-                id="main-error-banner"
-                message={state.message}
-                code={state.code}
-                onDismiss={handleReset}
-              />
-            )}
-
-            {/* URL Input / Search Form */}
-            {(state.phase === "idle" || state.phase === "error") && (
-              <div className="space-y-4">
-                <div className="text-center sm:text-left space-y-1">
-                  <h2 className="text-lg sm:text-xl font-bold text-white">
-                    Paste Link or Search Any Song/Video
-                  </h2>
-                  <p className="text-xs sm:text-sm text-gray-400">
-                    Paste a YouTube link or type keywords (e.g. artist, title) to browse top results.
-                  </p>
-                </div>
-                <UrlInputForm
-                  id="url-input-form"
-                  onSubmit={handleFetchOrSearch}
-                  loading={false}
+        {/* Split View Container on PC (lg:) / Single Active Tab View on Mobile */}
+        <div className="flex flex-col lg:flex-row gap-8 items-start w-full">
+          {/* LEFT COLUMN: Downloader or Downloads History (hidden on mobile when in player tab) */}
+          <div className={`flex-1 min-w-0 w-full ${activeTab === "player" ? "hidden lg:block" : "block"}`}>
+            {activeTab === "history" ? (
+              <div className="space-y-6">
+                <FileList
+                  id="library-files-list"
+                  onCountChange={setHistoryCount}
+                  onPlayTrack={handlePlayTrack}
                 />
+              </div>
+            ) : (
+              <div className="space-y-8">
+                {/* Error Banner */}
+                {state.phase === "error" && (
+                  <ErrorBanner
+                    id="main-error-banner"
+                    message={state.message}
+                    code={state.code}
+                    onDismiss={handleReset}
+                  />
+                )}
 
-                {/* Continue Playing / You are Playing & Recently Downloaded (Temporary: disappears during search/download) */}
-                {state.phase === "idle" && (
-                  <RecentAndActiveSection
-                    id="recent-and-active-section"
-                    currentFile={currentPlayingFile}
-                    recentFiles={recentFiles}
-                    totalCount={historyCount}
-                    onPlayTrack={(file) => handlePlayTrack(file, recentFiles)}
-                    onOpenPlayer={() => setActiveTab("player")}
-                    onViewLibrary={() => setActiveTab("history")}
+                {/* URL Input / Search Form */}
+                {(state.phase === "idle" || state.phase === "error") && (
+                  <div className="space-y-4">
+                    <div className="text-center sm:text-left space-y-1">
+                      <h2 className="text-lg sm:text-xl font-bold text-white">
+                        Paste Link or Search Any Song/Video
+                      </h2>
+                      <p className="text-xs sm:text-sm text-gray-400">
+                        Paste a YouTube link or type keywords (e.g. artist, title) to browse top results.
+                      </p>
+                    </div>
+                    <UrlInputForm
+                      id="url-input-form"
+                      onSubmit={handleFetchOrSearch}
+                      loading={false}
+                    />
+
+                    {/* Continue Playing / You are Playing & Recently Downloaded */}
+                    {state.phase === "idle" && (
+                      <RecentAndActiveSection
+                        id="recent-and-active-section"
+                        currentFile={currentPlayingFile}
+                        recentFiles={recentFiles}
+                        totalCount={historyCount}
+                        onPlayTrack={(file) => handlePlayTrack(file, recentFiles)}
+                        onOpenPlayer={() => setActiveTab("player")}
+                        onViewLibrary={() => setActiveTab("history")}
+                      />
+                    )}
+                  </div>
+                )}
+
+                {state.phase === "fetching" && (
+                  <div className="space-y-4">
+                    <div className="text-center sm:text-left space-y-1">
+                      <h2 className="text-lg sm:text-xl font-bold text-white">
+                        Analyzing YouTube URL...
+                      </h2>
+                      <p className="text-xs sm:text-sm text-gray-400">
+                        Fetching metadata, audio bitrates, and video resolutions.
+                      </p>
+                    </div>
+                    <UrlInputForm
+                      id="url-input-form-loading"
+                      onSubmit={handleFetchOrSearch}
+                      loading={true}
+                    />
+                  </div>
+                )}
+
+                {state.phase === "searching" && (
+                  <div className="space-y-4">
+                    <div className="text-center sm:text-left space-y-1">
+                      <h2 className="text-lg sm:text-xl font-bold text-white">
+                        Searching YouTube...
+                      </h2>
+                      <p className="text-xs sm:text-sm text-gray-400">
+                        Finding the top 15 related results for "{state.query}".
+                      </p>
+                    </div>
+                    <UrlInputForm
+                      id="url-input-form-searching"
+                      onSubmit={handleFetchOrSearch}
+                      loading={true}
+                    />
+                  </div>
+                )}
+
+                {/* Search Results */}
+                {state.phase === "search_results" && (
+                  <SearchResults
+                    id="search-results-list"
+                    query={state.query}
+                    results={state.results}
+                    onSelectVideo={(url) => handleFetchOrSearch(url, false)}
+                    onReset={handleReset}
+                  />
+                )}
+
+                {/* Single Video Card */}
+                {state.phase === "info" && state.data.type === "video" && (
+                  <VideoInfoCard
+                    id="video-info-card"
+                    info={state.data as VideoInfoResponse}
+                    onDownload={handleDownload}
+                    onReset={handleReset}
+                  />
+                )}
+
+                {/* Playlist Video List */}
+                {state.phase === "info" && state.data.type === "playlist" && (
+                  <PlaylistVideoList
+                    id="playlist-video-list"
+                    info={state.data as PlaylistInfoResponse}
+                    selectedIds={state.selectedVideoIds}
+                    onSelectionChange={handleVideoSelection}
+                    onDownload={handleDownload}
+                    onReset={handleReset}
+                  />
+                )}
+
+                {/* Downloading Progress */}
+                {state.phase === "downloading" && (
+                  <ProgressBar
+                    id="download-progress"
+                    jobId={state.jobId}
+                    frame={state.latestFrame}
+                    onCancel={handleCancel}
                   />
                 )}
               </div>
             )}
-
-            {state.phase === "fetching" && (
-              <div className="space-y-4">
-                <div className="text-center sm:text-left space-y-1">
-                  <h2 className="text-lg sm:text-xl font-bold text-white">
-                    Analyzing YouTube URL...
-                  </h2>
-                  <p className="text-xs sm:text-sm text-gray-400">
-                    Fetching metadata, audio bitrates, and video resolutions.
-                  </p>
-                </div>
-                <UrlInputForm
-                  id="url-input-form-loading"
-                  onSubmit={handleFetchOrSearch}
-                  loading={true}
-                />
-              </div>
-            )}
-
-            {state.phase === "searching" && (
-              <div className="space-y-4">
-                <div className="text-center sm:text-left space-y-1">
-                  <h2 className="text-lg sm:text-xl font-bold text-white">
-                    Searching YouTube...
-                  </h2>
-                  <p className="text-xs sm:text-sm text-gray-400">
-                    Finding the top 15 related results for "{state.query}".
-                  </p>
-                </div>
-                <UrlInputForm
-                  id="url-input-form-searching"
-                  onSubmit={handleFetchOrSearch}
-                  loading={true}
-                />
-              </div>
-            )}
-
-            {/* Search Results */}
-            {state.phase === "search_results" && (
-              <SearchResults
-                id="search-results-list"
-                query={state.query}
-                results={state.results}
-                onSelectVideo={(url) => handleFetchOrSearch(url, false)}
-                onReset={handleReset}
-              />
-            )}
-
-            {/* Single Video Card */}
-            {state.phase === "info" && state.data.type === "video" && (
-              <VideoInfoCard
-                id="video-info-card"
-                info={state.data as VideoInfoResponse}
-                onDownload={handleDownload}
-                onReset={handleReset}
-              />
-            )}
-
-            {/* Playlist Video List */}
-            {state.phase === "info" && state.data.type === "playlist" && (
-              <PlaylistVideoList
-                id="playlist-video-list"
-                info={state.data as PlaylistInfoResponse}
-                selectedIds={state.selectedVideoIds}
-                onSelectionChange={handleVideoSelection}
-                onDownload={handleDownload}
-                onReset={handleReset}
-              />
-            )}
-
-            {/* Downloading Progress */}
-            {state.phase === "downloading" && (
-              <ProgressBar
-                id="download-progress"
-                jobId={state.jobId}
-                frame={state.latestFrame}
-                onCancel={handleCancel}
-              />
-            )}
           </div>
-        )}
 
-        {/* MAIN TAB: HISTORY / LIBRARY */}
-        {activeTab === "history" && (
-          <div className="space-y-6">
-            <FileList
-              id="library-files-list"
-              onCountChange={setHistoryCount}
-              onPlayTrack={handlePlayTrack}
+          {/* RIGHT COLUMN: Docked Player (Persistent on PC lg:block, full player tab on mobile activeTab === "player") */}
+          <div
+            className={`w-full lg:w-[410px] xl:w-[450px] lg:sticky lg:top-6 lg:shrink-0 ${
+              activeTab === "player" ? "block animate-in fade-in duration-200" : "hidden lg:block"
+            }`}
+          >
+            <NowPlayingSection
+              ref={playerHandleRef}
+              id="now-playing-section"
+              currentFile={currentPlayingFile}
+              allFiles={allDownloadedFiles}
+              playlist={playerQueue.length > 0 ? playerQueue : allDownloadedFiles}
+              onSelectTrack={(file) => setCurrentPlayingFile(file)}
+              onPlayNext={handlePlayNext}
+              onPlayPrev={handlePlayPrev}
+              onGoToHistory={() => setActiveTab("history")}
+              onPlaybackStateChange={(playing) => setIsPlayerPlaying(playing)}
             />
           </div>
-        )}
-
-        {/* MAIN TAB: PLAYER (Persistently mounted in DOM so audio/video playback never stops across tab changes) */}
-        <div className={activeTab === "player" ? "space-y-6 animate-in fade-in duration-200" : "hidden"}>
-          <NowPlayingSection
-            ref={playerHandleRef}
-            id="now-playing-section"
-            currentFile={currentPlayingFile}
-            allFiles={allDownloadedFiles}
-            playlist={playerQueue.length > 0 ? playerQueue : allDownloadedFiles}
-            onSelectTrack={(file) => setCurrentPlayingFile(file)}
-            onPlayNext={handlePlayNext}
-            onPlayPrev={handlePlayPrev}
-            onGoToHistory={() => setActiveTab("history")}
-            onPlaybackStateChange={(playing) => setIsPlayerPlaying(playing)}
-          />
         </div>
       </div>
 
-      {/* Floating Mini Player Bar (Visible on Downloader & Library tabs during playback) */}
+      {/* Floating Mini Player Bar (Visible on mobile Downloader & Library tabs during playback; hidden on desktop lg:hidden) */}
       {activeTab !== "player" && currentPlayingFile && (
-        <MiniPlayerBar
-          currentFile={currentPlayingFile}
-          isPlaying={isPlayerPlaying}
-          onTogglePlayPause={() => playerHandleRef.current?.togglePlayPause()}
-          onOpenPlayer={() => setActiveTab("player")}
-        />
+        <div className="lg:hidden">
+          <MiniPlayerBar
+            currentFile={currentPlayingFile}
+            isPlaying={isPlayerPlaying}
+            onTogglePlayPause={() => playerHandleRef.current?.togglePlayPause()}
+            onOpenPlayer={() => setActiveTab("player")}
+          />
+        </div>
       )}
 
       {/* Download Complete Pop-Up (PC) & Header Notification (Mobile) with Translucent Background */}
