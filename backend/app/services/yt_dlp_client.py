@@ -269,6 +269,8 @@ def download_video(
         # Use FFmpeg for merging (installed in Docker image)
         "prefer_ffmpeg": True,
         "noplaylist": True,
+        # Write companion thumbnail
+        "writethumbnail": True,
     })
 
     if postprocessors:

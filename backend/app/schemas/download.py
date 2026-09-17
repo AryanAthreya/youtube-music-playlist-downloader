@@ -102,6 +102,9 @@ class FileInfo(BaseModel):
     """Metadata for a file in the completed/ directory (disk-backed)."""
 
     filename: str
+    clean_title: str
+    media_type: str = "other"  # 'video', 'audio', or 'other'
+    thumbnail_url: str | None = None
     size_bytes: int
     created_at: str          # ISO 8601
     modified_at: str         # ISO 8601

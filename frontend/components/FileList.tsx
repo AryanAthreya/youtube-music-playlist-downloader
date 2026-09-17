@@ -8,6 +8,7 @@ import type { FileInfo } from "@/lib/types";
 interface FileListProps {
   id: string;
   onCountChange?: (count: number) => void;
+  onPlayTrack?: (file: FileInfo, allFiles: FileInfo[]) => void;
 }
 
 function formatRelativeTime(isoDate: string): string {
@@ -37,7 +38,7 @@ function isAudioFile(filename: string): boolean {
   return ["mp3", "m4a", "opus", "flac", "wav", "ogg"].includes(ext);
 }
 
-export function FileList({ id, onCountChange }: FileListProps) {
+export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -226,53 +227,85 @@ export function FileList({ id, onCountChange }: FileListProps) {
       {filteredFiles.length > 0 && (
         <div className="space-y-2.5">
           {filteredFiles.map((file) => {
-            const isVideo = isVideoFile(file.filename);
-            const isAudio = isAudioFile(file.filename);
+            const isVideo = file.media_type === "video" || isVideoFile(file.filename);
+            const isAudio = file.media_type === "audio" || isAudioFile(file.filename);
             const downloadUrl = getFileByNameUrl(file.filename);
 
             return (
               <div
                 key={file.filename}
-                className="glass-card rounded-xl p-3.5 sm:p-4 flex items-center justify-between gap-3 sm:gap-4 hover:border-white/15 transition-all group"
+                className="glass-card rounded-2xl p-3.5 sm:p-4 flex items-center justify-between gap-3 sm:gap-4 hover:border-indigo-500/30 transition-all group"
               >
-                {/* File Icon (VLC cone style for video, audio player for music) */}
-                <div className="shrink-0">
-                  {isVideo ? (
-                    <div className="w-10 h-10 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-xl shadow-sm text-orange-400">
-                      <svg className="w-6 h-6 text-orange-400" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 2L4 19h16L12 2zm0 4.5l5.1 11H6.9L12 6.5zM12 9l-2.8 6h5.6L12 9z" />
-                      </svg>
-                    </div>
-                  ) : isAudio ? (
-                    <div className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-xl shadow-sm text-indigo-400">
-                      <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                      </svg>
-                    </div>
+                {/* Thumbnail with Video/Music Symbol Badge */}
+                <div
+                  onClick={() => {
+                    if (onPlayTrack) {
+                      onPlayTrack(file, filteredFiles);
+                    } else {
+                      setPreviewFile(file);
+                    }
+                  }}
+                  className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-slate-950 overflow-hidden shrink-0 border border-white/10 flex items-center justify-center cursor-pointer group-hover:border-indigo-500/50 shadow-md transition-all"
+                  title="Click to play"
+                >
+                  {file.thumbnail_url ? (
+                    <img
+                      src={file.thumbnail_url}
+                      alt={file.clean_title || file.filename}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      loading="lazy"
+                    />
                   ) : (
-                    <div className="w-10 h-10 rounded-xl bg-slate-800 border border-white/10 flex items-center justify-center text-xl shadow-sm text-gray-300">
-                      📄
+                    <div className="w-full h-full flex items-center justify-center text-2xl bg-slate-900">
+                      {isVideo ? "🎬" : isAudio ? "🎵" : "📄"}
                     </div>
                   )}
+
+                  {/* Video / Music Symbol Badge on bottom right of thumbnail */}
+                  <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded-md text-[9px] font-black bg-black/85 backdrop-blur-md border border-white/20 text-white flex items-center gap-1 shadow-sm">
+                    {isVideo ? (
+                      <>
+                        <span className="text-orange-400">🎬</span>
+                        <span className="font-mono">VID</span>
+                      </>
+                    ) : isAudio ? (
+                      <>
+                        <span className="text-indigo-400">🎵</span>
+                        <span className="font-mono">MP3</span>
+                      </>
+                    ) : (
+                      <span>📄</span>
+                    )}
+                  </span>
                 </div>
 
-                {/* File details */}
+                {/* File details (Clean Title) */}
                 <div className="flex-1 min-w-0 pr-2">
                   <button
-                    onClick={() => setPreviewFile(file)}
-                    className="text-left font-medium text-sm text-indigo-300 hover:text-indigo-200 hover:underline truncate block w-full transition-colors"
-                    title="Click to play / preview"
+                    onClick={() => {
+                      if (onPlayTrack) {
+                        onPlayTrack(file, filteredFiles);
+                      } else {
+                        setPreviewFile(file);
+                      }
+                    }}
+                    className="text-left font-semibold text-xs sm:text-sm text-white group-hover:text-indigo-300 hover:underline truncate block w-full transition-colors leading-snug"
+                    title="Click to play in Player"
                   >
-                    {file.filename}
+                    {file.clean_title || file.filename}
                   </button>
-                  <p className="text-[11px] text-gray-400 mt-0.5 truncate flex items-center gap-1.5">
-                    <span>{formatFileSize(file.size_bytes)}</span>
+                  <p className="text-[11px] text-gray-400 mt-1 truncate flex items-center gap-2 font-medium">
+                    <span className="font-mono">{formatFileSize(file.size_bytes)}</span>
                     <span>•</span>
                     <span>{formatRelativeTime(file.modified_at)}</span>
+                    <span className="hidden sm:inline">•</span>
+                    <span className="hidden sm:inline text-indigo-400/80 font-mono text-[10px]">
+                      {isVideo ? "MP4 Video" : "MP3 Audio"}
+                    </span>
                   </p>
                 </div>
 
-                {/* Action icons on right (like Brave downloads: copy link, folder, delete) */}
+                {/* Action icons on right */}
                 <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                   {/* Copy Link */}
                   <button
@@ -289,11 +322,17 @@ export function FileList({ id, onCountChange }: FileListProps) {
                     )}
                   </button>
 
-                  {/* Play / Preview Button */}
+                  {/* Play / Preview Button -> Switches to Player */}
                   <button
-                    onClick={() => setPreviewFile(file)}
-                    className="p-2 text-indigo-400 hover:text-indigo-300 rounded-lg hover:bg-indigo-500/10 transition-colors"
-                    title="Play / Preview media"
+                    onClick={() => {
+                      if (onPlayTrack) {
+                        onPlayTrack(file, filteredFiles);
+                      } else {
+                        setPreviewFile(file);
+                      }
+                    }}
+                    className="p-2 text-indigo-400 hover:text-indigo-300 rounded-lg hover:bg-indigo-500/15 active:scale-95 transition-all"
+                    title="Play in dedicated player"
                   >
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M8 5v14l11-7z" />

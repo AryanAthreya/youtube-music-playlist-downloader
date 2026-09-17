@@ -166,6 +166,9 @@ export interface JobResponse {
 
 export interface FileInfo {
   filename: string;
+  clean_title: string;
+  media_type: "video" | "audio" | "other";
+  thumbnail_url?: string | null;
   size_bytes: number;
   created_at: string;         // ISO 8601
   modified_at: string;        // ISO 8601

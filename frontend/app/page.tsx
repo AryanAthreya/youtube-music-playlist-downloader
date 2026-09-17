@@ -8,6 +8,8 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { FileList } from "@/components/FileList";
 import { SearchResults } from "@/components/SearchResults";
+import { NowPlayingSection } from "@/components/NowPlayingSection";
+import { BottomNavBar } from "@/components/BottomNavBar";
 import { fetchInfo, searchYouTube, createDownload, deleteJob, getFileUrl, getFiles } from "@/lib/api";
 import { createJobWebSocket } from "@/lib/websocket";
 import type {
@@ -17,6 +19,7 @@ import type {
   DownloadRequest,
   WebSocketFrame,
   SearchResultItem,
+  FileInfo,
 } from "@/lib/types";
 
 type AppState =
@@ -30,11 +33,67 @@ type AppState =
   | { phase: "error"; message: string; code: string };
 
 export default function HomePage() {
-  const [activeTab, setActiveTab] = useState<"downloader" | "history">("downloader");
+  const [activeTab, setActiveTab] = useState<"downloader" | "history" | "player">("downloader");
   const [state, setState] = useState<AppState>({ phase: "idle" });
   const [wsHandle, setWsHandle] = useState<{ close: () => void } | null>(null);
   const [historyCount, setHistoryCount] = useState<number>(0);
+  const [currentPlayingFile, setCurrentPlayingFile] = useState<FileInfo | null>(null);
+  const [playerQueue, setPlayerQueue] = useState<FileInfo[]>([]);
   const autoDownloadedJobRef = useRef<string | null>(null);
+
+  // Touch swipe support for switching tabs on mobile
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartX.current;
+    const deltaY = e.changedTouches[0].clientY - touchStartY.current;
+    touchStartX.current = null;
+    touchStartY.current = null;
+
+    // Trigger only if horizontal swipe dominates and exceeds threshold
+    if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+      const tabs = ["downloader", "history", "player"] as const;
+      const currentIndex = tabs.indexOf(activeTab);
+      if (deltaX < 0 && currentIndex < tabs.length - 1) {
+        setActiveTab(tabs[currentIndex + 1]);
+      } else if (deltaX > 0 && currentIndex > 0) {
+        setActiveTab(tabs[currentIndex - 1]);
+      }
+    }
+  };
+
+  const handlePlayTrack = useCallback((file: FileInfo, allFiles: FileInfo[]) => {
+    setCurrentPlayingFile(file);
+    setPlayerQueue(allFiles);
+    setActiveTab("player");
+  }, []);
+
+  const handlePlayNext = useCallback(() => {
+    if (!currentPlayingFile || playerQueue.length === 0) return;
+    const idx = playerQueue.findIndex((f) => f.filename === currentPlayingFile.filename);
+    if (idx >= 0 && idx < playerQueue.length - 1) {
+      setCurrentPlayingFile(playerQueue[idx + 1]);
+    } else if (playerQueue.length > 0) {
+      setCurrentPlayingFile(playerQueue[0]);
+    }
+  }, [currentPlayingFile, playerQueue]);
+
+  const handlePlayPrev = useCallback(() => {
+    if (!currentPlayingFile || playerQueue.length === 0) return;
+    const idx = playerQueue.findIndex((f) => f.filename === currentPlayingFile.filename);
+    if (idx > 0) {
+      setCurrentPlayingFile(playerQueue[idx - 1]);
+    } else if (playerQueue.length > 0) {
+      setCurrentPlayingFile(playerQueue[playerQueue.length - 1]);
+    }
+  }, [currentPlayingFile, playerQueue]);
 
   // Initial file count fetch
   useEffect(() => {
@@ -186,7 +245,11 @@ export default function HomePage() {
   }, [wsHandle]);
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100 flex flex-col justify-between">
+    <main
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100 flex flex-col justify-between pb-20 md:pb-0 select-none md:select-auto"
+    >
       {/* Background ambient lighting */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[700px] h-[350px] bg-gradient-to-br from-red-600/10 via-indigo-600/10 to-transparent blur-3xl opacity-70" />
@@ -214,8 +277,8 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Navigation Tabs */}
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900/90 border border-white/10 glass-card">
+          {/* Navigation Tabs (Hidden on mobile or compact) */}
+          <div className="hidden sm:flex items-center gap-1 p-1 rounded-xl bg-slate-900/90 border border-white/10 glass-card">
             <button
               onClick={() => setActiveTab("downloader")}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
@@ -234,7 +297,7 @@ export default function HomePage() {
               onClick={() => setActiveTab("history")}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
                 activeTab === "history"
-                  ? "bg-gradient-to-r from-red-600 to-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                  ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-600/20"
                   : "text-gray-400 hover:text-white"
               }`}
             >
@@ -247,6 +310,25 @@ export default function HomePage() {
                   {historyCount}
                 </span>
               )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab("player")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
+                activeTab === "player"
+                  ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md shadow-purple-600/20"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              <div className="relative">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                </svg>
+                {currentPlayingFile && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                )}
+              </div>
+              <span>Player</span>
             </button>
           </div>
         </header>
@@ -422,10 +504,34 @@ export default function HomePage() {
             <FileList
               id="library-files-list"
               onCountChange={setHistoryCount}
+              onPlayTrack={handlePlayTrack}
+            />
+          </div>
+        )}
+
+        {/* MAIN TAB: PLAYER */}
+        {activeTab === "player" && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            <NowPlayingSection
+              id="now-playing-section"
+              currentFile={currentPlayingFile}
+              playlist={playerQueue}
+              onSelectTrack={(file) => setCurrentPlayingFile(file)}
+              onPlayNext={handlePlayNext}
+              onPlayPrev={handlePlayPrev}
+              onGoToHistory={() => setActiveTab("history")}
             />
           </div>
         )}
       </div>
+
+      {/* Mobile Bottom Navigation Bar */}
+      <BottomNavBar
+        activeTab={activeTab}
+        onChangeTab={setActiveTab}
+        fileCount={historyCount}
+        hasActiveTrack={currentPlayingFile !== null}
+      />
 
       {/* FOOTER */}
       <footer className="relative z-10 py-8 border-t border-white/[0.08] bg-slate-950/80 backdrop-blur-md">

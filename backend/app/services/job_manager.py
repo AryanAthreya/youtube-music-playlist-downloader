@@ -375,7 +375,7 @@ def _run_single_video_job(job: Job, bridge: ProgressBridge) -> None:
 
     # Create temp dir and set output template
     temp_dir = create_job_temp_dir(job.job_id)
-    output_template = str(temp_dir / "%(id)s-%(title)s.%(ext)s")
+    output_template = str(temp_dir / "%(title)s.%(ext)s")
 
     # Download (yt-dlp will try the selector fallback chain automatically)
     progress_hook = bridge.get_hook()
@@ -450,7 +450,7 @@ def _run_playlist_job(job: Job, bridge: ProgressBridge) -> None:
 
             child_job_id = f"{job.job_id}-{child.video_id}"
             temp_dir = create_job_temp_dir(child_job_id)
-            output_template = str(temp_dir / "%(id)s-%(title)s.%(ext)s")
+            output_template = str(temp_dir / "%(title)s.%(ext)s")
 
             # Child progress hook updates the child's progress snapshot
             def make_child_hook(c: ChildJob):

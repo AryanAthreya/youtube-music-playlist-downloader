@@ -12,9 +12,11 @@ Handles all filesystem operations for downloads:
 import asyncio
 import logging
 import os
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from app.config import get_settings
 from app.errors.exceptions import DiskSpaceError
@@ -22,6 +24,11 @@ from app.schemas.download import FileInfo, FilesListResponse
 from app.utils.sanitize import build_safe_filename
 
 logger = logging.getLogger(__name__)
+
+_VIDEO_ID_REGEX = re.compile(r"^([a-zA-Z0-9_-]{11})-(.+)$")
+_IMAGE_EXTS = {".jpg", ".jpeg", ".webp", ".png", ".gif"}
+_VIDEO_EXTS = {".mp4", ".mkv", ".webm", ".avi", ".mov", ".flv"}
+_AUDIO_EXTS = {".mp3", ".m4a", ".opus", ".wav", ".flac", ".ogg", ".aac"}
 
 
 def ensure_directories() -> None:
@@ -197,10 +204,10 @@ def move_first_file_to_completed(job_id: str) -> Path:
             f"No output file found in temp dir for job {job_id}"
         )
 
-    # Prefer the final merged file (usually .mp4 or .mp3, not .part or .ytdl)
+    # Prefer the final merged file (usually .mp4 or .mp3, not .part or .ytdl or images)
     final_candidates = [
         f for f in candidates
-        if not f.suffix.lower() in {".part", ".ytdl", ".tmp"}
+        if not f.suffix.lower() in {".part", ".ytdl", ".tmp"} and not f.suffix.lower() in _IMAGE_EXTS
     ]
     source_file = final_candidates[0] if final_candidates else candidates[0]
 
@@ -213,6 +220,20 @@ def move_first_file_to_completed(job_id: str) -> Path:
 
     shutil.move(str(source_file), str(dest))
     logger.info("Moved completed file (preserved name): %s -> %s", source_file, dest)
+
+    # Move any companion thumbnail images found in temp_dir alongside
+    thumb_candidates = [
+        f for f in candidates
+        if f.suffix.lower() in _IMAGE_EXTS
+    ]
+    for thumb in thumb_candidates:
+        thumb_dest = settings.completed_dir / f"{dest.stem}{thumb.suffix}"
+        try:
+            shutil.move(str(thumb), str(thumb_dest))
+            logger.info("Moved companion thumbnail: %s -> %s", thumb, thumb_dest)
+        except Exception as err:
+            logger.warning("Failed to move thumbnail %s: %s", thumb, err)
+
     return dest
 
 
@@ -234,7 +255,7 @@ def delete_completed_file(file_path: Path) -> None:
     """Delete a completed file from the completed/ directory.
 
     Only deletes files that are within the configured completed/ directory
-    to prevent path traversal.
+    to prevent path traversal. Also deletes any companion thumbnail images.
 
     Args:
         file_path: Absolute path to the file to delete.
@@ -253,6 +274,13 @@ def delete_completed_file(file_path: Path) -> None:
     if file_path.exists():
         file_path.unlink()
         logger.info("Deleted completed file: %s", file_path)
+
+    # Clean up any companion thumbnail images
+    for img_ext in _IMAGE_EXTS:
+        thumb_candidate = file_path.parent / f"{file_path.stem}{img_ext}"
+        if thumb_candidate.exists():
+            thumb_candidate.unlink(missing_ok=True)
+            logger.info("Deleted companion thumbnail: %s", thumb_candidate)
 
 
 def list_completed_files() -> FilesListResponse:
@@ -275,14 +303,52 @@ def list_completed_files() -> FilesListResponse:
         if not path.is_file() or path.name.startswith("."):
             continue
 
+        ext = path.suffix.lower()
+        # Don't show standalone companion thumbnail images as independent downloads
+        if ext in _IMAGE_EXTS:
+            continue
+
         stat = path.stat()
+        stem = path.stem
+
+        # 1. Clean title without video_id prefix
+        match = _VIDEO_ID_REGEX.match(stem)
+        if match:
+            video_id = match.group(1)
+            clean_title = match.group(2).strip()
+        else:
+            video_id = None
+            clean_title = stem.strip()
+
+        # 2. Media type
+        if ext in _VIDEO_EXTS:
+            media_type = "video"
+        elif ext in _AUDIO_EXTS:
+            media_type = "audio"
+        else:
+            media_type = "other"
+
+        # 3. Companion thumbnail or YouTube fallback thumbnail
+        thumbnail_url = None
+        for img_ext in (".jpg", ".jpeg", ".webp", ".png"):
+            companion = completed_dir / f"{stem}{img_ext}"
+            if companion.exists():
+                thumbnail_url = f"/api/files/{quote(companion.name)}"
+                break
+
+        if not thumbnail_url and video_id:
+            thumbnail_url = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+
         file_infos.append(
             FileInfo(
                 filename=path.name,
+                clean_title=clean_title,
+                media_type=media_type,
+                thumbnail_url=thumbnail_url,
                 size_bytes=stat.st_size,
                 created_at=datetime.fromtimestamp(stat.st_ctime, tz=timezone.utc).isoformat(),
                 modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
-                download_url=f"/api/files/{path.name}",
+                download_url=f"/api/files/{quote(path.name)}",
             )
         )
 
