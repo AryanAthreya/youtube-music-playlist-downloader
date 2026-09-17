@@ -173,6 +173,8 @@ export interface FileInfo {
   created_at: string;         // ISO 8601
   modified_at: string;        // ISO 8601
   download_url: string;       // Relative: /api/files/{filename}
+  is_preview?: boolean;
+  youtube_id?: string;
 }
 
 export interface FilesListResponse {

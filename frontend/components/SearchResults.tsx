@@ -7,6 +7,7 @@ interface SearchResultsProps {
   query: string;
   results: SearchResultItem[];
   onSelectVideo: (url: string) => void;
+  onPlayPreview?: (item: SearchResultItem) => void;
   onReset: () => void;
 }
 
@@ -24,6 +25,7 @@ export function SearchResults({
   query,
   results,
   onSelectVideo,
+  onPlayPreview,
   onReset,
 }: SearchResultsProps) {
   return (
@@ -75,6 +77,23 @@ export function SearchResults({
                     🎬
                   </div>
                 )}
+
+                {/* Instant Play / Preview Button on Thumbnail */}
+                {onPlayPreview && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPlayPreview(item);
+                    }}
+                    className="absolute inset-0 m-auto w-12 h-12 rounded-full bg-black/60 hover:bg-red-600 active:scale-90 text-white flex items-center justify-center backdrop-blur-md border border-white/20 opacity-0 group-hover:opacity-100 transition-all shadow-xl"
+                    title="Play / Preview in Player"
+                  >
+                    <svg className="w-5 h-5 ml-0.5 fill-current" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </button>
+                )}
+
                 {item.duration && (
                   <span className="absolute bottom-2 right-2 bg-black/85 backdrop-blur-sm text-white text-[10px] font-mono px-1.5 py-0.5 rounded border border-white/10">
                     {formatDuration(item.duration)}
@@ -98,9 +117,24 @@ export function SearchResults({
 
                 <div className="flex items-center justify-between pt-2 border-t border-white/[0.06] text-[10px] text-gray-400">
                   <span>{item.view_count ? `${item.view_count.toLocaleString()} views` : "YouTube"}</span>
-                  <span className="text-indigo-400 font-bold group-hover:translate-x-0.5 transition-transform">
-                    Select & Download →
-                  </span>
+                  
+                  <div className="flex items-center gap-2">
+                    {onPlayPreview && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onPlayPreview(item);
+                        }}
+                        className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white font-bold transition-colors"
+                        title="Preview in Player"
+                      >
+                        ▶ Play
+                      </button>
+                    )}
+                    <span className="text-indigo-400 font-bold group-hover:translate-x-0.5 transition-transform">
+                      Download →
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

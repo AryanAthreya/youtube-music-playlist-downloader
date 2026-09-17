@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback, useImperativeHandle, forwardR
 import type { FileInfo } from "@/lib/types";
 import { getFileByNameUrl, resolveMediaUrl } from "@/lib/api";
 import { formatFileSize } from "@/lib/websocket";
+import { useTheme } from "../context/ThemeContext";
 
 export interface NowPlayingSectionHandle {
   togglePlayPause: () => void;
@@ -53,6 +54,7 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
     },
     ref
   ) {
+    const { config } = useTheme();
     const videoRef = useRef<HTMLVideoElement>(null);
     const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -338,19 +340,34 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
       <div id={id} className="w-full space-y-4 animate-in fade-in duration-300">
         {/* ── HERO MEDIA CARD (1:1.15 Modern Ratio, Lower Controls Only) ─── */}
         <div className="relative group">
-          {/* Subtle ambient lighting behind hero */}
-          <div className="absolute -inset-2 bg-gradient-to-tr from-red-600/20 via-indigo-600/15 to-transparent rounded-[32px] blur-2xl opacity-75 group-hover:opacity-100 transition-opacity" />
+          {/* Subtle ambient lighting behind hero equalized by theme */}
+          <div
+            className="absolute -inset-2 rounded-[32px] blur-2xl opacity-75 group-hover:opacity-100 transition-opacity"
+            style={{ background: `radial-gradient(circle, ${config.glow} 0%, transparent 70%)` }}
+          />
 
           <div className="relative w-full aspect-[1/1.1] sm:aspect-[4/3] rounded-3xl overflow-hidden bg-zinc-950 border border-white/10 shadow-2xl flex flex-col justify-end">
-            {/* Media Type Badge on top right of the square (No wasted header row) */}
+            {/* Media Type Badge on top right of the square */}
             <div className="absolute top-3.5 right-3.5 z-20 pointer-events-none">
               <span className="px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md text-white border border-white/20 text-[10px] font-mono font-bold tracking-wider flex items-center gap-1 shadow-lg shadow-black/50">
-                <span>{isVideo ? "🎬" : "🎵"}</span>
-                <span>{isVideo ? "VID" : "MP3"}</span>
+                <span>{currentFile.is_preview ? "▶" : isVideo ? "🎬" : "🎵"}</span>
+                <span>{currentFile.is_preview ? "YOUTUBE" : isVideo ? "VID" : "MP3"}</span>
               </span>
             </div>
 
-            {isVideo ? (
+            {/* If YouTube Search Preview */}
+            {currentFile.is_preview && currentFile.youtube_id ? (
+              <div className="absolute inset-0 w-full h-full bg-black flex items-center justify-center select-auto">
+                <iframe
+                  key={currentFile.youtube_id}
+                  src={`https://www.youtube-nocookie.com/embed/${currentFile.youtube_id}?autoplay=1&enablejsapi=1&playsinline=1`}
+                  title={currentFile.clean_title}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  className="w-full h-full border-0"
+                />
+              </div>
+            ) : isVideo ? (
               /* Video Container - Strictly Display Only (No screen click conflicts) */
               <div className="absolute inset-0 w-full h-full bg-black flex items-center justify-center select-none">
                 <video
@@ -414,12 +431,12 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
             {/* Blended Dark Vignette with Full Song Name & Metadata */}
             <div className="relative z-10 p-5 sm:p-6 bg-gradient-to-t from-black/95 via-black/70 to-transparent pt-16 pointer-events-none">
               <div className="flex items-center gap-2 pb-1.5">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-red-400">
-                  {isVideo ? "Video Track" : "Audio Track"}
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: config.primaryHex }}>
+                  {currentFile.is_preview ? "YouTube Preview" : isVideo ? "Video Track" : "Audio Track"}
                 </span>
                 <span className="text-zinc-500">•</span>
                 <span className="text-[10px] font-medium text-zinc-400">
-                  {formatFileSize(currentFile.size_bytes)}
+                  {currentFile.size_bytes ? formatFileSize(currentFile.size_bytes) : "Online Stream"}
                 </span>
               </div>
 
@@ -441,9 +458,10 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
                 max={duration || 100}
                 value={currentTime}
                 onChange={handleSeek}
-                className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer accent-red-500 hover:accent-red-400 transition-all"
+                className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer transition-all"
                 style={{
-                  background: `linear-gradient(to right, #ef4444 ${progressPercent}%, rgba(255,255,255,0.1) ${progressPercent}%)`,
+                  background: `linear-gradient(to right, ${config.primaryHex} ${progressPercent}%, rgba(255,255,255,0.1) ${progressPercent}%)`,
+                  accentColor: config.primaryHex,
                 }}
               />
             </div>
@@ -461,9 +479,10 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
               onClick={() => setIsRepeat(!isRepeat)}
               className={`p-2.5 rounded-full text-sm transition-all active:scale-95 ${
                 isRepeat
-                  ? "text-red-400 bg-red-500/15 border border-red-500/30 shadow-sm shadow-red-500/20"
+                  ? "bg-white/10 border border-white/20 shadow-sm"
                   : "text-zinc-400 hover:text-white"
               }`}
+              style={{ color: isRepeat ? config.primaryHex : undefined }}
               title={isRepeat ? "Repeat is ON" : "Repeat is OFF"}
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -486,7 +505,11 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
             {/* Center Circular Play/Pause (Exclusively controls video and music) */}
             <button
               onClick={togglePlayPause}
-              className="w-16 h-16 rounded-full bg-red-600 hover:bg-red-500 active:scale-95 text-white flex items-center justify-center shadow-xl shadow-red-600/35 border border-white/20 transition-all"
+              className="w-16 h-16 rounded-full active:scale-95 text-white flex items-center justify-center shadow-xl border border-white/20 transition-all"
+              style={{
+                backgroundColor: config.primaryHex,
+                boxShadow: `0 10px 30px -5px ${config.glow}`,
+              }}
               title={isPlaying ? "Pause" : "Play"}
             >
               {isPlaying ? (
