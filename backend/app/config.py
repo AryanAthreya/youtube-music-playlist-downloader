@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     # ── Download limits ───────────────────────────────────────────────────
     max_concurrent_downloads: int = 2
-    download_retention_hours: int = 24
+    download_retention_hours: int = 0  # 0 = disabled (keep downloaded files permanently)
     min_disk_headroom_mb: int = 1024
 
     # ── Storage ───────────────────────────────────────────────────────────

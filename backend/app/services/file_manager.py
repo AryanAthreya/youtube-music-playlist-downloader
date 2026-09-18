@@ -374,6 +374,10 @@ def _retention_sweep_sync() -> int:
         int: Number of files deleted.
     """
     settings = get_settings()
+    # 0 or negative disables automatic deletion — files are kept permanently
+    if settings.download_retention_hours <= 0:
+        return 0
+
     completed_dir = settings.completed_dir
 
     if not completed_dir.exists():
@@ -409,6 +413,11 @@ async def start_retention_sweep_task() -> asyncio.Task:
     Returns:
         asyncio.Task: The background task handle.
     """
+    settings = get_settings()
+    if settings.download_retention_hours <= 0:
+        logger.info("Retention sweep is disabled (retention=%d). Files will be preserved permanently.", settings.download_retention_hours)
+        return asyncio.create_task(asyncio.sleep(0))
+
     async def _loop() -> None:
         while True:
             try:
