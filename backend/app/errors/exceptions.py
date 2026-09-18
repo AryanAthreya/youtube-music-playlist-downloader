@@ -78,6 +78,16 @@ class VideoUnavailableError(YTDLAppError):
     error_code = "VIDEO_UNAVAILABLE"
 
 
+class PlaylistUnavailableError(YTDLAppError):
+    """Raised when a playlist does not exist, has been deleted, or is set to private.
+
+    HTTP 404 — Not Found / Unavailable.
+    """
+
+    http_status = 404
+    error_code = "PLAYLIST_UNAVAILABLE"
+
+
 class RegionRestrictedError(YTDLAppError):
     """Raised when the video is blocked in the server's region.
 
@@ -176,6 +186,7 @@ _EXCEPTION_STATUS_MAP: dict[type[YTDLAppError], int] = {
     InvalidURLError: 400,
     UnsupportedURLError: 422,
     VideoUnavailableError: 404,
+    PlaylistUnavailableError: 404,
     RegionRestrictedError: 403,
     FormatUnavailableError: 422,
     ExtractionError: 502,

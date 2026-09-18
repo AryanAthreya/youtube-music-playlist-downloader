@@ -28,10 +28,13 @@ from app.errors.exceptions import (
     ExtractionError,
     FormatUnavailableError,
     NetworkError,
+    PlaylistUnavailableError,
     RegionRestrictedError,
     UnsupportedURLError,
     VideoUnavailableError,
+    YTDLAppError,
 )
+from app.utils.url_validation import is_playlist_url
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +125,12 @@ def _map_yt_dlp_error(
 
     # Check DownloadError messages for known patterns
     if isinstance(exc, (DownloadError, ExtractorError)):
+        if "playlist does not exist" in msg or "the playlist does not exist" in msg or (is_playlist_url(url) and any(kw in msg for kw in ("not exist", "private", "unavailable", "deleted"))):
+            return PlaylistUnavailableError(
+                "This playlist does not exist or is set to Private on YouTube. If this is your playlist, please make sure its visibility is set to 'Unlisted' or 'Public'.",
+                job_id=job_id,
+                detail=str(exc),
+            )
         if any(kw in msg for kw in ("private", "unavailable", "deleted", "removed")):
             return VideoUnavailableError(
                 "This video is unavailable (private, deleted, or removed).",
@@ -209,11 +218,18 @@ def fetch_info(
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
             if info is None:
-                raise ExtractionError(
-                    "yt-dlp returned no information for this URL.",
+                if is_playlist_url(url):
+                    raise PlaylistUnavailableError(
+                        "This playlist does not exist or is set to Private on YouTube. If this is your playlist, please make sure its visibility is set to 'Unlisted' or 'Public'.",
+                        detail=f"extract_info returned None for {url}",
+                    )
+                raise VideoUnavailableError(
+                    "This video does not exist, has been deleted, or is set to Private on YouTube.",
                     detail=f"extract_info returned None for {url}",
                 )
             return info
+    except YTDLAppError:
+        raise
     except (DownloadError, ExtractorError, GeoRestrictedError, UnsupportedError) as exc:
         raise _map_yt_dlp_error(exc, url) from exc
     except Exception as exc:
@@ -292,7 +308,7 @@ def download_video(
             if cancel_event.is_set():
                 raise CancelledError("Job was cancelled.", job_id=job_id)
 
-    except CancelledError:
+    except YTDLAppError:
         raise
     except (DownloadError, ExtractorError, GeoRestrictedError, UnsupportedError) as exc:
         mapped = _map_yt_dlp_error(exc, url, job_id=job_id)

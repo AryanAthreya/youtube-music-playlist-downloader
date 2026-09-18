@@ -11,6 +11,7 @@ import logging
 from fastapi import APIRouter
 
 from app.config import get_settings
+from app.errors.exceptions import PlaylistUnavailableError
 from app.schemas.info import (
     AudioOption,
     FormatInfo,
@@ -137,6 +138,12 @@ def _build_playlist_response(info: dict) -> PlaylistInfoResponse:
                 duration=entry.get("duration"),
                 url=f"https://www.youtube.com/watch?v={video_id}",
             )
+        )
+
+    if not videos:
+        raise PlaylistUnavailableError(
+            "This playlist contains no available or public videos to download.",
+            detail=f"Playlist {info.get('id')} has 0 playable entries",
         )
 
     return PlaylistInfoResponse(
