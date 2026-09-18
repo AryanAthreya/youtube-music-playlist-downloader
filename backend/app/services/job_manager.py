@@ -279,10 +279,25 @@ def create_and_submit_job(
         for idx, entry in enumerate(entries):
             if not entry:
                 continue
+            raw_title = entry.get("title")
+            if not raw_title or str(raw_title).strip() in (
+                "[Private video]",
+                "[Deleted video]",
+                "[Unavailable video]",
+            ):
+                continue
+            video_id = entry.get("id")
+            if not video_id:
+                continue
+
+            thumbnail = entry.get("thumbnail")
+            if not thumbnail and entry.get("thumbnails"):
+                thumbnail = entry["thumbnails"][-1].get("url")
+
             child = ChildJob(
-                video_id=entry.get("id", ""),
-                title=entry.get("title", "Unknown"),
-                thumbnail=entry.get("thumbnail"),
+                video_id=str(video_id),
+                title=str(raw_title).strip(),
+                thumbnail=thumbnail,
                 duration=entry.get("duration"),
                 index=idx,
             )

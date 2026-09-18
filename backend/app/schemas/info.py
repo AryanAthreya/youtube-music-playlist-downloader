@@ -85,7 +85,7 @@ class PlaylistVideoItem(BaseModel):
     """Compact metadata for a single video within a playlist."""
 
     video_id: str
-    title: str
+    title: str = "Unknown Video"
     thumbnail: str | None = None
     duration: int | None = None
     url: str
@@ -96,7 +96,7 @@ class PlaylistInfoResponse(BaseModel):
 
     type: Literal["playlist"] = "playlist"
     playlist_id: str
-    title: str
+    title: str = "Unknown Playlist"
     uploader: str | None = None
     video_count: int
     videos: list[PlaylistVideoItem]

@@ -65,6 +65,8 @@ def _build_base_opts(
         "no_color": True,
         # Ensure filenames are safe for Windows host filesystem mounts
         "windowsfilenames": True,
+        # Continue on download errors (e.g. hidden/unavailable videos in playlists)
+        "ignoreerrors": True,
     }
 
 

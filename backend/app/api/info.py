@@ -112,20 +112,36 @@ def _build_playlist_response(info: dict) -> PlaylistInfoResponse:
     for entry in entries:
         if not entry:
             continue
-        video_id = entry.get("id", "")
+        # Skip unavailable or hidden videos that have no title or are marked private/deleted
+        raw_title = entry.get("title")
+        if not raw_title or str(raw_title).strip() in (
+            "[Private video]",
+            "[Deleted video]",
+            "[Unavailable video]",
+        ):
+            continue
+
+        video_id = entry.get("id")
+        if not video_id:
+            continue
+
+        thumbnail = entry.get("thumbnail")
+        if not thumbnail and entry.get("thumbnails"):
+            thumbnail = entry["thumbnails"][-1].get("url")
+
         videos.append(
             PlaylistVideoItem(
-                video_id=video_id,
-                title=entry.get("title", "Unknown"),
-                thumbnail=entry.get("thumbnail"),
+                video_id=str(video_id),
+                title=str(raw_title).strip(),
+                thumbnail=thumbnail,
                 duration=entry.get("duration"),
                 url=f"https://www.youtube.com/watch?v={video_id}",
             )
         )
 
     return PlaylistInfoResponse(
-        playlist_id=info.get("id", ""),
-        title=info.get("title", "Unknown Playlist"),
+        playlist_id=info.get("id", "") or "",
+        title=info.get("title", "Unknown Playlist") or "Unknown Playlist",
         uploader=info.get("uploader") or info.get("channel"),
         video_count=len(videos),
         videos=videos,

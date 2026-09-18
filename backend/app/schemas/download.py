@@ -75,7 +75,7 @@ class ChildJobSchema(BaseModel):
     """Serializable child job for playlist responses."""
 
     video_id: str
-    title: str
+    title: str = "Unknown Video"
     thumbnail: str | None = None
     duration: int | None = None
     index: int

@@ -246,9 +246,16 @@ def register_exception_handlers(app: FastAPI) -> None:
                 extra=log_extra,
             )
 
+        origin = request.headers.get("origin")
+        headers = {}
+        if origin:
+            headers["Access-Control-Allow-Origin"] = origin
+            headers["Access-Control-Allow-Credentials"] = "true"
+
         return JSONResponse(
             status_code=status_code,
             content=_build_error_response(exc),
+            headers=headers,
         )
 
     @app.exception_handler(Exception)
@@ -265,10 +272,17 @@ def register_exception_handlers(app: FastAPI) -> None:
             request.url.path,
             exc_info=True,
         )
+        origin = request.headers.get("origin")
+        headers = {}
+        if origin:
+            headers["Access-Control-Allow-Origin"] = origin
+            headers["Access-Control-Allow-Credentials"] = "true"
+
         return JSONResponse(
             status_code=500,
             content={
                 "error": "INTERNAL_ERROR",
                 "message": "An unexpected internal error occurred.",
             },
+            headers=headers,
         )
