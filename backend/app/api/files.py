@@ -19,7 +19,7 @@ from app.config import get_settings
 from app.errors.exceptions import InvalidURLError, JobNotFoundError
 from app.schemas.download import FilesListResponse
 from app.services import job_manager
-from app.services.file_manager import delete_file, list_completed_files
+from app.services.file_manager import delete_completed_file, list_completed_files
 
 logger = logging.getLogger(__name__)
 
@@ -329,7 +329,7 @@ async def delete_file_by_name(filename: str) -> dict:
     if not file_path.exists() or not file_path.is_file():
         raise JobNotFoundError(f"File '{safe_filename}' not found.")
 
-    delete_file(file_path)
+    delete_completed_file(file_path)
     logger.info("Deleted completed file: %s", safe_filename)
     return {"message": f"File '{safe_filename}' deleted.", "filename": safe_filename}
 

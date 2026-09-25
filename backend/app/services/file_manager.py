@@ -283,6 +283,10 @@ def delete_completed_file(file_path: Path) -> None:
             logger.info("Deleted companion thumbnail: %s", thumb_candidate)
 
 
+# Convenience alias
+delete_file = delete_completed_file
+
+
 def list_completed_files() -> FilesListResponse:
     """List all audio and video files in the completed/ directory and its subfolders.
 
