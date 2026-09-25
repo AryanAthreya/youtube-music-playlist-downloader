@@ -179,9 +179,30 @@ export function PlaylistsSection({
     });
   }, [customPlaylists, allFiles]);
 
+  // Compile folder-based Album playlists automatically
+  const albumPlaylists = useMemo(() => {
+    const albumMap = new Map<string, FileInfo[]>();
+    for (const file of allFiles) {
+      if (file.album) {
+        if (!albumMap.has(file.album)) {
+          albumMap.set(file.album, []);
+        }
+        albumMap.get(file.album)!.push(file);
+      }
+    }
+    return Array.from(albumMap.entries()).map(([albumName, tracks]) => ({
+      id: `album-${albumName}`,
+      name: albumName,
+      tracks,
+      icon: "📁",
+      isSystem: true,
+      isAlbum: true,
+    }));
+  }, [allFiles]);
+
   const allPlaylistsList = useMemo(() => {
-    return [...systemPlaylists, ...customPlaylistsWithTracks];
-  }, [systemPlaylists, customPlaylistsWithTracks]);
+    return [...systemPlaylists, ...albumPlaylists, ...customPlaylistsWithTracks];
+  }, [systemPlaylists, albumPlaylists, customPlaylistsWithTracks]);
 
   // If a playlist detail view is active
   const selectedPlaylist = useMemo(() => {

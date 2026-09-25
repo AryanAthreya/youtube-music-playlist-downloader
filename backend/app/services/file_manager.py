@@ -284,10 +284,12 @@ def delete_completed_file(file_path: Path) -> None:
 
 
 def list_completed_files() -> FilesListResponse:
-    """List all files in the completed/ directory.
+    """List all audio and video files in the completed/ directory and its subfolders.
 
     Disk-backed — survives backend restarts even though the in-memory
     job store is cleared. Files are sorted by modification time, newest first.
+    Recursively scans subfolders so users can organize music into albums or
+    drop album folders directly into the completed/ directory.
 
     Returns:
         FilesListResponse: List of file metadata for all completed downloads.
@@ -298,20 +300,40 @@ def list_completed_files() -> FilesListResponse:
     if not completed_dir.exists():
         return FilesListResponse(files=[], total=0)
 
+    # 1. Collect all valid audio and video files recursively
+    all_media_paths: list[Path] = []
+    for root, dirs, files in os.walk(completed_dir):
+        # Exclude hidden directories (e.g. .git, .cache)
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for file in files:
+            if file.startswith("."):
+                continue
+            file_path = Path(root) / file
+            ext = file_path.suffix.lower()
+            if ext in _AUDIO_EXTS or ext in _VIDEO_EXTS:
+                all_media_paths.append(file_path)
+
+    # 2. Sort newest first based on modification time
+    all_media_paths.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
     file_infos: list[FileInfo] = []
-    for path in sorted(completed_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-        if not path.is_file() or path.name.startswith("."):
+    for path in all_media_paths:
+        try:
+            stat = path.stat()
+        except OSError:
             continue
 
         ext = path.suffix.lower()
-        # Don't show standalone companion thumbnail images as independent downloads
-        if ext in _IMAGE_EXTS:
-            continue
-
-        stat = path.stat()
         stem = path.stem
+        rel_path = path.relative_to(completed_dir)
+        rel_str = rel_path.as_posix()
 
-        # 1. Clean title without video_id prefix
+        # Check if file is in an album / subfolder
+        album: str | None = None
+        if len(rel_path.parts) > 1:
+            album = rel_path.parent.as_posix()
+
+        # Extract YouTube ID and clean title
         match = _VIDEO_ID_REGEX.match(stem)
         if match:
             video_id = match.group(1)
@@ -320,7 +342,7 @@ def list_completed_files() -> FilesListResponse:
             video_id = None
             clean_title = stem.strip()
 
-        # 2. Media type
+        # Determine media type
         if ext in _VIDEO_EXTS:
             media_type = "video"
         elif ext in _AUDIO_EXTS:
@@ -328,27 +350,43 @@ def list_completed_files() -> FilesListResponse:
         else:
             media_type = "other"
 
-        # 3. Companion thumbnail or YouTube fallback thumbnail
+        # Determine thumbnail:
+        # A) Track-specific companion in same folder (e.g. Song.webp, Song.jpg)
         thumbnail_url = None
         for img_ext in (".jpg", ".jpeg", ".webp", ".png"):
-            companion = completed_dir / f"{stem}{img_ext}"
-            if companion.exists():
-                thumbnail_url = f"/api/files/{quote(companion.name)}"
+            companion = path.parent / f"{stem}{img_ext}"
+            if companion.exists() and companion.is_file():
+                rel_thumb = companion.relative_to(completed_dir).as_posix()
+                thumbnail_url = f"/api/files/{quote(rel_thumb)}"
                 break
 
+        # B) Folder-level album artwork (e.g. cover.jpg, folder.jpg, album.jpg, art.jpg)
+        if not thumbnail_url and album:
+            for cover_stem in ("cover", "folder", "album", "front", "art"):
+                for img_ext in (".jpg", ".jpeg", ".webp", ".png"):
+                    cover_candidate = path.parent / f"{cover_stem}{img_ext}"
+                    if cover_candidate.exists() and cover_candidate.is_file():
+                        rel_thumb = cover_candidate.relative_to(completed_dir).as_posix()
+                        thumbnail_url = f"/api/files/{quote(rel_thumb)}"
+                        break
+                if thumbnail_url:
+                    break
+
+        # C) YouTube CDN fallback if we have a valid video_id
         if not thumbnail_url and video_id:
             thumbnail_url = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
 
         file_infos.append(
             FileInfo(
-                filename=path.name,
+                filename=rel_str,
                 clean_title=clean_title,
                 media_type=media_type,
                 thumbnail_url=thumbnail_url,
                 size_bytes=stat.st_size,
                 created_at=datetime.fromtimestamp(stat.st_ctime, tz=timezone.utc).isoformat(),
                 modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
-                download_url=f"/api/files/{quote(path.name)}",
+                download_url=f"/api/files/{quote(rel_str)}",
+                album=album,
             )
         )
 
@@ -356,78 +394,17 @@ def list_completed_files() -> FilesListResponse:
 
 
 async def retention_sweep() -> int:
-    """Delete completed files older than DOWNLOAD_RETENTION_HOURS.
-
-    Runs as an asyncio periodic background task. Uses asyncio.to_thread
-    for the filesystem operations to avoid blocking the event loop.
-
-    Returns:
-        int: Number of files deleted.
-    """
-    return await asyncio.to_thread(_retention_sweep_sync)
+    """Retention sweep is permanently disabled to preserve user music."""
+    return 0
 
 
 def _retention_sweep_sync() -> int:
-    """Synchronous implementation of the retention sweep.
-
-    Returns:
-        int: Number of files deleted.
-    """
-    settings = get_settings()
-    # 0 or negative disables automatic deletion — files are kept permanently
-    if settings.download_retention_hours <= 0:
-        return 0
-
-    completed_dir = settings.completed_dir
-
-    if not completed_dir.exists():
-        return 0
-
-    cutoff = datetime.now(tz=timezone.utc).timestamp() - (
-        settings.download_retention_hours * 3600
-    )
-    deleted = 0
-
-    for path in completed_dir.iterdir():
-        if not path.is_file() or path.name.startswith("."):
-            continue
-        try:
-            mtime = path.stat().st_mtime
-            if mtime < cutoff:
-                path.unlink()
-                logger.info("Retention sweep: deleted %s (mtime=%s)", path.name, mtime)
-                deleted += 1
-        except OSError as exc:
-            logger.warning("Retention sweep: could not delete %s: %s", path, exc)
-
-    if deleted:
-        logger.info("Retention sweep complete: deleted %d file(s)", deleted)
-    return deleted
+    """Retention sweep is permanently disabled to preserve user music."""
+    return 0
 
 
 async def start_retention_sweep_task() -> asyncio.Task:
-    """Start the periodic retention sweep as an asyncio background task.
+    """Permanent retention: no sweep task needed. Files are preserved forever."""
+    logger.info("Retention sweep is disabled. Downloaded files and albums are kept permanently.")
+    return asyncio.create_task(asyncio.sleep(0))
 
-    Runs every hour. The task runs for the lifetime of the application.
-
-    Returns:
-        asyncio.Task: The background task handle.
-    """
-    settings = get_settings()
-    if settings.download_retention_hours <= 0:
-        logger.info("Retention sweep is disabled (retention=%d). Files will be preserved permanently.", settings.download_retention_hours)
-        return asyncio.create_task(asyncio.sleep(0))
-
-    async def _loop() -> None:
-        while True:
-            try:
-                deleted = await retention_sweep()
-                logger.debug("Retention sweep: %d file(s) deleted", deleted)
-            except Exception as exc:
-                logger.error("Retention sweep error: %s", exc, exc_info=True)
-            await asyncio.sleep(3600)  # Run every hour
-
-    task = asyncio.create_task(_loop(), name="retention_sweep")
-    logger.info("Started retention sweep task (interval=1h, retention=%dh)",
-                get_settings().download_retention_hours)
-    return task

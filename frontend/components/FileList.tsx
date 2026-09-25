@@ -131,7 +131,11 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
 
   const filteredFiles = useMemo(() => {
     return files.filter((f) => {
-      const matchesSearch = f.filename.toLowerCase().includes(searchQuery.toLowerCase());
+      const q = searchQuery.toLowerCase();
+      const matchesSearch =
+        f.filename.toLowerCase().includes(q) ||
+        f.clean_title.toLowerCase().includes(q) ||
+        (f.album ? f.album.toLowerCase().includes(q) : false);
       if (!matchesSearch) return false;
       if (filterType === "video") return isVideoFile(f.filename);
       if (filterType === "audio") return isAudioFile(f.filename);
@@ -429,6 +433,14 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                     <span className="font-mono">{formatFileSize(file.size_bytes)}</span>
                     <span>•</span>
                     <span>{formatRelativeTime(file.modified_at)}</span>
+                    {file.album && (
+                      <>
+                        <span>•</span>
+                        <span className="px-1.5 py-0.5 rounded bg-white/10 text-[10px] text-white/90 font-medium truncate max-w-[120px]" title={`Album: ${file.album}`}>
+                          📁 {file.album}
+                        </span>
+                      </>
+                    )}
                     <span className="hidden sm:inline">•</span>
                     <span className="hidden sm:inline font-mono text-[10px]" style={{ color: `${config.primaryHex}cc` }}>
                       {isVideo ? "MP4 Video" : "MP3 Audio"}

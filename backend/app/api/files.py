@@ -19,7 +19,7 @@ from app.config import get_settings
 from app.errors.exceptions import InvalidURLError, JobNotFoundError
 from app.schemas.download import FilesListResponse
 from app.services import job_manager
-from app.services.file_manager import list_completed_files
+from app.services.file_manager import delete_file, list_completed_files
 
 logger = logging.getLogger(__name__)
 
@@ -51,24 +51,26 @@ def _validate_job_id(job_id: str) -> str:
 
 
 def _validate_filename(filename: str) -> str:
-    """Validate a filename to prevent path traversal.
+    """Validate a filename or relative subpath to prevent path traversal.
 
-    Only allows filenames (no path separators or parent traversal).
+    Allows nested subfolder/album relative paths (e.g. 'Album/Track.mp3').
+    Strictly forbids '..' or absolute paths.
 
     Args:
-        filename: User-supplied filename.
+        filename: User-supplied filename or relative path.
 
     Returns:
-        str: The validated filename.
+        str: The validated relative path.
 
     Raises:
-        InvalidURLError: If the filename contains path separators or traversal.
+        InvalidURLError: If the filename contains path traversal.
     """
-    if "/" in filename or "\\" in filename or ".." in filename:
-        raise InvalidURLError(f"Invalid filename: '{filename}'. Path separators not allowed.")
-    if not filename or filename.startswith("."):
-        raise InvalidURLError(f"Invalid filename: '{filename}'.")
-    return filename
+    if not filename or not filename.strip():
+        raise InvalidURLError("Filename cannot be empty.")
+    norm = filename.replace("\\", "/").strip().lstrip("/")
+    if ".." in norm:
+        raise InvalidURLError(f"Invalid filename '{filename}': path traversal not allowed.")
+    return norm
 
 
 async def _stream_file_range(
@@ -271,22 +273,20 @@ async def list_files() -> FilesListResponse:
     return list_completed_files()
 
 
-@router.get("/files/{filename}")
+@router.get("/files/{filename:path}")
 async def serve_file_by_name(
     filename: str,
     range: str | None = Header(default=None),
     stream: bool = False,
 ) -> Response:
-    """Serve a completed file by filename (Range-aware).
+    """Serve a completed file by filename or relative album path (Range-aware).
 
-    Used by the FileList UI component to allow downloading files that
-    survived a server restart (where the job record no longer exists).
-
+    Used by the FileList and Player UI components to stream or download files.
     The filename is validated to prevent path traversal. The actual file
     path is resolved from the completed/ directory — not from user input.
 
     Args:
-        filename: Filename in the completed/ directory.
+        filename: Filename or relative path in the completed/ directory.
         range: HTTP Range header value (optional).
         stream: If True, uses 'inline' for preview playback;
                 if False (default), uses 'attachment' to download.
@@ -314,9 +314,9 @@ async def serve_file_by_name(
     return await _serve_file(file_path, range, disposition=disposition)
 
 
-@router.delete("/files/{filename}")
+@router.delete("/files/{filename:path}")
 async def delete_file_by_name(filename: str) -> dict:
-    """Delete a completed file by filename from the history library."""
+    """Delete a completed file by filename or relative path from the library."""
     safe_filename = _validate_filename(filename)
     settings = get_settings()
     file_path = settings.completed_dir / safe_filename
@@ -329,6 +329,7 @@ async def delete_file_by_name(filename: str) -> dict:
     if not file_path.exists() or not file_path.is_file():
         raise JobNotFoundError(f"File '{safe_filename}' not found.")
 
-    file_path.unlink()
+    delete_file(file_path)
     logger.info("Deleted completed file: %s", safe_filename)
     return {"message": f"File '{safe_filename}' deleted.", "filename": safe_filename}
+

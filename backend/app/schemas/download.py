@@ -110,6 +110,7 @@ class FileInfo(BaseModel):
     created_at: str          # ISO 8601
     modified_at: str         # ISO 8601
     download_url: str        # Relative URL for /api/files/{filename}
+    album: str | None = None # Folder name / album name if nested, e.g. "Devotional"
 
 
 class FilesListResponse(BaseModel):
