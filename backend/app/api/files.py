@@ -68,7 +68,8 @@ def _validate_filename(filename: str) -> str:
     if not filename or not filename.strip():
         raise InvalidURLError("Filename cannot be empty.")
     norm = filename.replace("\\", "/").strip().lstrip("/")
-    if ".." in norm:
+    parts = Path(norm).parts
+    if any(p == ".." for p in parts):
         raise InvalidURLError(f"Invalid filename '{filename}': path traversal not allowed.")
     return norm
 
@@ -192,7 +193,29 @@ async def _serve_file(
         )
 
     file_size = file_path.stat().st_size
-    mime_type, _ = mimetypes.guess_type(str(file_path))
+    ext = file_path.suffix.lower()
+
+    # Accurate MIME type mapping (mimetypes module in slim Linux lacks .webp and .m4a)
+    _EXPLICIT_MIMES = {
+        ".webp": "image/webp",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".svg": "image/svg+xml",
+        ".m4a": "audio/mp4",
+        ".mp3": "audio/mpeg",
+        ".ogg": "audio/ogg",
+        ".opus": "audio/opus",
+        ".flac": "audio/flac",
+        ".wav": "audio/wav",
+        ".mp4": "video/mp4",
+        ".webm": "video/webm",
+        ".mkv": "video/x-matroska",
+    }
+    mime_type = _EXPLICIT_MIMES.get(ext)
+    if not mime_type:
+        mime_type, _ = mimetypes.guess_type(str(file_path))
     mime_type = mime_type or "application/octet-stream"
 
     try:
@@ -210,6 +233,8 @@ async def _serve_file(
         "Accept-Ranges": "bytes",
         "Content-Range": f"bytes {start}-{end}/{file_size}",
     }
+    if ext in (".jpg", ".jpeg", ".webp", ".png", ".gif", ".svg"):
+        headers["Cache-Control"] = "public, max-age=86400"
 
     status_code = 206 if is_partial else 200
 
@@ -310,7 +335,8 @@ async def serve_file_by_name(
             f"Invalid filename: path traversal detected."
         ) from exc
 
-    disposition = "inline" if stream else "attachment"
+    is_image = file_path.suffix.lower() in (".jpg", ".jpeg", ".webp", ".png", ".gif", ".svg")
+    disposition = "inline" if (stream or is_image) else "attachment"
     return await _serve_file(file_path, range, disposition=disposition)
 
 
