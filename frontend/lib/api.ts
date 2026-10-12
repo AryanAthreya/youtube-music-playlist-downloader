@@ -29,10 +29,18 @@ import type {
  */
 export function getApiBase(): string {
   const envUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (envUrl !== undefined) {
-    return envUrl; // Could be "" (same-origin) or explicit custom URL
+  if (envUrl !== undefined && envUrl !== "") {
+    return envUrl; // Explicit custom URL
   }
   if (typeof window !== "undefined" && window.location) {
+    // If running dev/LAN stack on port 3000, talk directly to backend on port 8000
+    if (window.location.port === "3000") {
+      return `${window.location.protocol}//${window.location.hostname}:8000`;
+    }
+    // Production behind reverse proxy (port 80/443): same-origin relative URLs
+    if (envUrl === "") {
+      return "";
+    }
     return `${window.location.protocol}//${window.location.hostname}:8000`;
   }
   return "http://localhost:8000";

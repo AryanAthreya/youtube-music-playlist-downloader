@@ -22,24 +22,21 @@ import { getJobStatus } from "./api";
  */
 function getWsBase(): string {
   const envUrl = process.env.NEXT_PUBLIC_WS_URL;
-  if (envUrl !== undefined) {
-    if (envUrl !== "") {
-      return envUrl;
+  if (envUrl !== undefined && envUrl !== "") {
+    return envUrl;
+  }
+  if (typeof window !== "undefined" && window.location) {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    // If running dev/LAN stack on port 3000, connect to backend on port 8000
+    if (window.location.port === "3000") {
+      return `${proto}//${window.location.hostname}:8000`;
     }
-    // Explicit empty string (""): same-origin behind reverse proxy
-    if (typeof window !== "undefined" && window.location) {
-      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    // Production behind reverse proxy (port 80/443): same-origin host
+    if (envUrl === "") {
       return `${proto}//${window.location.host}`;
     }
-    return "ws://localhost:8000";
-  }
-
-  // Undefined: dev / LAN fallback
-  if (typeof window !== "undefined" && window.location) {
-    const proto = window.location.protocol === "https:" ? "wss" : "ws:";
     return `${proto}//${window.location.hostname}:8000`;
   }
-
   return "ws://localhost:8000";
 }
 

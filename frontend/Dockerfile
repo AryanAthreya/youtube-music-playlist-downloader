@@ -14,8 +14,6 @@ COPY . .
 # In production (docker-compose.prod.yml), pass "" for same-origin relative URLs
 ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_WS_URL
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 
 # Build the Next.js app
 RUN npm run build
