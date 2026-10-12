@@ -434,6 +434,19 @@ export async function deleteOfflineTrack(id: string): Promise<void> {
 }
 
 /**
+ * Remove all saved offline tracks from IndexedDB.
+ */
+export async function clearAllOfflineTracks(): Promise<void> {
+  const dbPromiseRef = getDB();
+  if (!dbPromiseRef) return;
+  const db = await dbPromiseRef;
+  await db.clear("offlineTracks");
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("ytdl_offline_updated"));
+  }
+}
+
+/**
  * Check total offline storage usage and track count.
  */
 export async function getOfflineStorageUsage(): Promise<{ count: number; totalBytes: number }> {

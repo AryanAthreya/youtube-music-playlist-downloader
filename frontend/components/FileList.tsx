@@ -5,6 +5,13 @@ import { getFiles, getFileByNameUrl, deleteFileByName, resolveMediaUrl } from "@
 import { formatFileSize } from "@/lib/websocket";
 import type { FileInfo } from "@/lib/types";
 import { useTheme } from "../context/ThemeContext";
+import {
+  saveTrackForOffline,
+  removeTrackFromOffline,
+  getAllOfflineTrackList,
+  loadOfflineTrackForPlayback,
+  getTrackOfflineId,
+} from "@/lib/offlineManager";
 
 interface FileListProps {
   id: string;
@@ -45,10 +52,14 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterType, setFilterType] = useState<"all" | "video" | "audio">("all");
+  const [filterType, setFilterType] = useState<"all" | "video" | "audio" | "offline">("all");
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<FileInfo | null>(null);
   const [copiedFilename, setCopiedFilename] = useState<string | null>(null);
+
+  const [savedOfflineIds, setSavedOfflineIds] = useState<Set<string>>(new Set());
+  const [offlineTrackList, setOfflineTrackList] = useState<FileInfo[]>([]);
+  const [offlineDownloadingMap, setOfflineDownloadingMap] = useState<Record<string, number>>({});
 
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set());
@@ -73,6 +84,56 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
     const interval = setInterval(loadFiles, 15_000);
     return () => clearInterval(interval);
   }, [loadFiles]);
+
+  const loadOfflineTracks = useCallback(async () => {
+    try {
+      const list = await getAllOfflineTrackList();
+      setOfflineTrackList(list);
+      setSavedOfflineIds(new Set(list.map((t) => getTrackOfflineId(t))));
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    loadOfflineTracks();
+    window.addEventListener("ytdl_offline_updated", loadOfflineTracks);
+    return () => window.removeEventListener("ytdl_offline_updated", loadOfflineTracks);
+  }, [loadOfflineTracks]);
+
+  const handleToggleOffline = async (file: FileInfo) => {
+    const id = getTrackOfflineId(file);
+    if (savedOfflineIds.has(id)) {
+      if (confirm(`Remove "${file.clean_title}" from offline storage?`)) {
+        await removeTrackFromOffline(file);
+      }
+    } else {
+      setOfflineDownloadingMap((prev) => ({ ...prev, [id]: 0 }));
+      try {
+        await saveTrackForOffline(file, (pct) => {
+          setOfflineDownloadingMap((prev) => ({ ...prev, [id]: pct }));
+        });
+      } catch (err) {
+        alert("Failed to save offline: " + String(err));
+      } finally {
+        setOfflineDownloadingMap((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }
+    }
+  };
+
+  const handlePlayFile = async (file: FileInfo, queue: FileInfo[]) => {
+    const id = getTrackOfflineId(file);
+    if (savedOfflineIds.has(id)) {
+      const offlineTrack = await loadOfflineTrackForPlayback(file);
+      if (offlineTrack) {
+        onPlayTrack?.(offlineTrack, queue);
+        return;
+      }
+    }
+    onPlayTrack?.(file, queue);
+  };
 
   const toggleSelectForDelete = (filename: string) => {
     setSelectedForDelete((prev) => {
@@ -130,7 +191,13 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
   };
 
   const filteredFiles = useMemo(() => {
-    return files.filter((f) => {
+    const sourceList =
+      filterType === "offline"
+        ? offlineTrackList.length > 0
+          ? offlineTrackList
+          : files.filter((f) => savedOfflineIds.has(getTrackOfflineId(f)))
+        : files;
+    return sourceList.filter((f) => {
       const q = searchQuery.toLowerCase();
       const matchesSearch =
         f.filename.toLowerCase().includes(q) ||
@@ -141,10 +208,11 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
       if (filterType === "audio") return isAudioFile(f.filename);
       return true;
     });
-  }, [files, searchQuery, filterType]);
+  }, [files, offlineTrackList, savedOfflineIds, searchQuery, filterType]);
 
   const videoCount = useMemo(() => files.filter((f) => isVideoFile(f.filename)).length, [files]);
   const audioCount = useMemo(() => files.filter((f) => isAudioFile(f.filename)).length, [files]);
+  const offlineCount = useMemo(() => savedOfflineIds.size, [savedOfflineIds]);
 
   return (
     <section id={id} className="space-y-4">
@@ -255,7 +323,7 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
           {/* Tabs */}
           <div className="flex items-center gap-1.5 p-1 glass-card rounded-xl">
-            {(["all", "video", "audio"] as const).map((type) => (
+            {(["all", "video", "audio", "offline"] as const).map((type) => (
               <button
                 key={type}
                 onClick={() => setFilterType(type)}
@@ -265,7 +333,13 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                   : { color: "rgba(156,163,175,1)" }
                 }
               >
-                {type === "all" ? `All (${files.length})` : type === "video" ? `Videos (${videoCount})` : `Audio (${audioCount})`}
+                {type === "all"
+                  ? `All (${files.length})`
+                  : type === "video"
+                  ? `Videos (${videoCount})`
+                  : type === "audio"
+                  ? `Audio (${audioCount})`
+                  : `Offline ⚡ (${offlineCount})`}
               </button>
             ))}
           </div>
@@ -366,7 +440,7 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                       return;
                     }
                     if (onPlayTrack) {
-                      onPlayTrack(file, filteredFiles);
+                      handlePlayFile(file, filteredFiles);
                     } else {
                       setPreviewFile(file);
                     }
@@ -417,7 +491,7 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                         return;
                       }
                       if (onPlayTrack) {
-                        onPlayTrack(file, filteredFiles);
+                        handlePlayFile(file, filteredFiles);
                       } else {
                         setPreviewFile(file);
                       }
@@ -455,6 +529,38 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                     if (isDeleteMode) e.stopPropagation();
                   }}
                 >
+                  {/* Offline Save / Remove Button */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleOffline(file)}
+                    disabled={offlineDownloadingMap[getTrackOfflineId(file)] !== undefined}
+                    className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
+                    title={
+                      savedOfflineIds.has(getTrackOfflineId(file))
+                        ? "Saved offline (click to remove)"
+                        : "Save to device for offline playback"
+                    }
+                  >
+                    {offlineDownloadingMap[getTrackOfflineId(file)] !== undefined ? (
+                      <span className="text-[10px] font-bold text-amber-400">
+                        {offlineDownloadingMap[getTrackOfflineId(file)]}%
+                      </span>
+                    ) : savedOfflineIds.has(getTrackOfflineId(file)) ? (
+                      <span className="text-xs text-emerald-400 font-bold" title="Saved offline">
+                        ⚡
+                      </span>
+                    ) : (
+                      <svg className="w-4 h-4 text-zinc-400 hover:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
+                        />
+                      </svg>
+                    )}
+                  </button>
+
                   {/* Copy Link */}
                   <button
                     onClick={() => handleCopyLink(file.filename)}
@@ -474,7 +580,7 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                   <button
                     onClick={() => {
                       if (onPlayTrack) {
-                        onPlayTrack(file, filteredFiles);
+                        handlePlayFile(file, filteredFiles);
                       } else {
                         setPreviewFile(file);
                       }

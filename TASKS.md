@@ -85,18 +85,18 @@
 ---
 
 ### Phase 5: Offline Tracks
-- [ ] Implement sequential offline download manager in `frontend/lib/offlineManager.ts`:
-  - [ ] Stream chunk-by-chunk download with progress feedback
-  - [ ] Blob assembly and storage into IndexedDB `offlineTracks` store
-  - [ ] Thumbnail caching via `/api/thumb`
-  - [ ] Cancel, delete, and storage quota protection
-  - [ ] Sequential saves only (low memory)
-- [ ] Add "Save Offline" action to `NowPlayingSection`, `SearchResults`, `FileList`, and `PlaylistsSection`
-- [ ] Provide "Saved Offline" filter in library view
-- [ ] Support object URL lifecycle (`URL.createObjectURL` at play time / `URL.revokeObjectURL` on switch/teardown)
-- [ ] Document iOS Safari storage quotas and background download limitations in README
-- [ ] Test offline playback behavior
-- [ ] Commit Phase 5 changes to git
+- [x] Implement sequential offline download manager in `frontend/lib/offlineManager.ts`:
+  - [x] Stream chunk-by-chunk download with progress feedback
+  - [x] Blob assembly and storage into IndexedDB `offlineTracks` store
+  - [x] Thumbnail caching via `/api/thumb`
+  - [x] Cancel, delete, and storage quota protection
+  - [x] Sequential saves only (low memory)
+- [x] Add "Save Offline" action to `NowPlayingSection`, `SearchResults`, `FileList`, and `PlaylistsSection`
+- [x] Provide "Saved Offline" filter in library view
+- [x] Support object URL lifecycle (`URL.createObjectURL` at play time / `URL.revokeObjectURL` on switch/teardown)
+- [x] Document iOS Safari storage quotas and background download limitations in README
+- [x] Test offline playback behavior
+- [x] Commit Phase 5 changes to git
 
 ---
 

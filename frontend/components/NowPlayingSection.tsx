@@ -6,6 +6,7 @@ import { getFileByNameUrl, resolveMediaUrl, resolveTrackAudioUrl } from "@/lib/a
 import { formatFileSize } from "@/lib/websocket";
 import { useTheme } from "../context/ThemeContext";
 import { addHistoryEntry } from "@/lib/db";
+import { isTrackSavedOffline, saveTrackForOffline, removeTrackFromOffline } from "@/lib/offlineManager";
 
 export interface NowPlayingSectionHandle {
   togglePlayPause: () => void;
@@ -95,6 +96,42 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
       currentFile?.filename.toLowerCase().endsWith(".mkv");
 
     const [streamError, setStreamError] = useState<string | null>(null);
+    const [isCurrentOffline, setIsCurrentOffline] = useState(false);
+    const [isSavingOffline, setIsSavingOffline] = useState(false);
+    const [saveProgress, setSaveProgress] = useState(0);
+
+    // Sync offline status for current track
+    useEffect(() => {
+      if (!currentFile) {
+        setIsCurrentOffline(false);
+        return;
+      }
+      const check = () => {
+        isTrackSavedOffline(currentFile).then(setIsCurrentOffline).catch(() => {});
+      };
+      check();
+      window.addEventListener("ytdl_offline_updated", check);
+      return () => window.removeEventListener("ytdl_offline_updated", check);
+    }, [currentFile?.filename, currentFile?.youtube_id]);
+
+    const handleToggleOfflineCurrentTrack = async () => {
+      if (!currentFile) return;
+      if (isCurrentOffline) {
+        if (confirm(`Remove "${currentFile.clean_title}" from offline storage?`)) {
+          await removeTrackFromOffline(currentFile);
+        }
+      } else {
+        setIsSavingOffline(true);
+        setSaveProgress(0);
+        try {
+          await saveTrackForOffline(currentFile, (pct) => setSaveProgress(pct));
+        } catch (err) {
+          alert("Failed to save offline: " + String(err));
+        } finally {
+          setIsSavingOffline(false);
+        }
+      }
+    };
 
     // Sync playback when track changes
     useEffect(() => {
@@ -454,16 +491,41 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
             </div>
           </div>
 
-          <span
-            className="text-[11px] font-mono font-medium px-2.5 py-1 rounded-full border shrink-0 transition-colors"
-            style={{
-              borderColor: `${config.primaryHex}35`,
-              backgroundColor: `${config.primaryHex}15`,
-              color: config.primaryHex,
-            }}
-          >
-            {currentPlaylistFiles.length} {currentPlaylistFiles.length === 1 ? "song" : "songs"}
-          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Offline Save Toggle */}
+            <button
+              type="button"
+              onClick={handleToggleOfflineCurrentTrack}
+              disabled={isSavingOffline}
+              className="px-2.5 py-1 rounded-full border text-[11px] font-semibold flex items-center gap-1.5 transition-all glass-card hover:border-white/30"
+              title={isCurrentOffline ? "Saved offline (click to remove)" : "Save track to device for offline playback"}
+            >
+              {isSavingOffline ? (
+                <span className="text-amber-400 font-mono">{saveProgress}%</span>
+              ) : isCurrentOffline ? (
+                <>
+                  <span className="text-emerald-400">⚡</span>
+                  <span className="text-emerald-300">Offline</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-zinc-400">📥</span>
+                  <span className="text-zinc-300">Save Offline</span>
+                </>
+              )}
+            </button>
+
+            <span
+              className="text-[11px] font-mono font-medium px-2.5 py-1 rounded-full border shrink-0 transition-colors"
+              style={{
+                borderColor: `${config.primaryHex}35`,
+                backgroundColor: `${config.primaryHex}15`,
+                color: config.primaryHex,
+              }}
+            >
+              {currentPlaylistFiles.length} {currentPlaylistFiles.length === 1 ? "song" : "songs"}
+            </span>
+          </div>
         </div>
 
         {/* ── HERO MEDIA CARD (1:1.15 Modern Ratio, Lower Controls Only) ─── */}

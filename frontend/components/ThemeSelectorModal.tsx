@@ -1,7 +1,9 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useTheme, THEMES } from "../context/ThemeContext";
+import { getOfflineStorageUsage, getStorageQuotaEstimate, clearAllOfflineTracks } from "@/lib/db";
+import { formatFileSize } from "@/lib/websocket";
 
 interface ThemeSelectorModalProps {
   isOpen: boolean;
@@ -10,6 +12,27 @@ interface ThemeSelectorModalProps {
 
 export function ThemeSelectorModal({ isOpen, onClose }: ThemeSelectorModalProps) {
   const { theme, setTheme, config } = useTheme();
+  const [offlineUsage, setOfflineUsage] = useState<{ count: number; totalBytes: number }>({ count: 0, totalBytes: 0 });
+  const [quota, setQuota] = useState<{ percentUsed: number; quotaBytes: number; usageBytes: number }>({ percentUsed: 0, quotaBytes: 0, usageBytes: 0 });
+
+  const refreshStorage = () => {
+    getOfflineStorageUsage().then(setOfflineUsage).catch(() => {});
+    getStorageQuotaEstimate().then(setQuota).catch(() => {});
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      refreshStorage();
+      window.addEventListener("ytdl_offline_updated", refreshStorage);
+      return () => window.removeEventListener("ytdl_offline_updated", refreshStorage);
+    }
+  }, [isOpen]);
+
+  const handleClearOffline = async () => {
+    if (!confirm("Remove all saved offline tracks from this device?")) return;
+    await clearAllOfflineTracks();
+    refreshStorage();
+  };
 
   if (!isOpen) return null;
 
@@ -104,7 +127,39 @@ export function ThemeSelectorModal({ isOpen, onClose }: ThemeSelectorModalProps)
           </div>
         </div>
 
-        {/* Section 2: All Footer & About Info */}
+        {/* Section 2: Offline Storage Management */}
+        <div className="pt-3 border-t border-white/10 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Offline Storage</span>
+            {offlineUsage.count > 0 && (
+              <button
+                type="button"
+                onClick={handleClearOffline}
+                className="text-[11px] text-red-400 hover:text-red-300 underline"
+              >
+                Clear all
+              </button>
+            )}
+          </div>
+          <div className="p-3 rounded-2xl bg-zinc-900/60 border border-white/5 space-y-1.5 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-400">Saved Tracks</span>
+              <span className="font-semibold text-white">{offlineUsage.count} tracks</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-400">Space Used</span>
+              <span className="font-mono text-[11px] text-zinc-300">{formatFileSize(offlineUsage.totalBytes)}</span>
+            </div>
+            {quota.quotaBytes > 0 && (
+              <div className="flex items-center justify-between text-[11px] text-zinc-400 pt-0.5">
+                <span>Browser Quota</span>
+                <span>{quota.percentUsed.toFixed(1)}% used ({formatFileSize(quota.usageBytes)} / {formatFileSize(quota.quotaBytes)})</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Section 3: All Footer & About Info */}
         <div className="pt-3 border-t border-white/10 space-y-2.5">
           <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">About & Footer Info</span>
 
