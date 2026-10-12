@@ -123,19 +123,19 @@
 ---
 
 ### Phase 7: QA, Regression Verification & Documentation
-- [ ] Full regression testing:
-  - [ ] Single video download (video & audio)
-  - [ ] Playlist download with ZIP creation
-  - [ ] WebSocket live progress
-  - [ ] Library files view & delete
-  - [ ] Existing themes
-- [ ] New features testing:
-  - [ ] On-demand audio streaming with Range seek
-  - [ ] Playlist streaming (next, previous, repeat, shuffle)
-  - [ ] Offline track saving and playback with network disconnected
-  - [ ] PWA installation and offline shell load
-- [ ] Update `README.md` (correct test count to 57+, new features, architecture, deployment)
-- [ ] Final audit summary and merge preparation
+- [x] Full regression testing:
+  - [x] Single video download (video & audio)
+  - [x] Playlist download with ZIP creation
+  - [x] WebSocket live progress
+  - [x] Library files view & delete
+  - [x] Existing themes
+- [x] New features testing:
+  - [x] On-demand audio streaming with Range seek
+  - [x] Playlist streaming (next, previous, repeat, shuffle)
+  - [x] Offline track saving and playback with network disconnected
+  - [x] PWA installation and offline shell load
+- [x] Update `README.md` (correct test count to 85, new features, architecture, deployment)
+- [x] Final audit summary and merge preparation
 
 ---
 
