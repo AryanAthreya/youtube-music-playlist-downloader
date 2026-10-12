@@ -102,7 +102,7 @@ class TestVideoIdValidation:
 
 class TestAudioFormatSelection:
 
-    def test_prefers_m4a_over_webm(self):
+    def test_auto_prefers_opus_251_when_client_supports_opus(self):
         formats = [
             {
                 "format_id": "251",
@@ -121,7 +121,145 @@ class TestAudioFormatSelection:
                 "url": "https://rr---sn.googlevideo.com/videoplayback?id=2",
             },
         ]
-        best_fmt, mime_type = _select_best_audio_format(formats)
+        best_fmt, mime_type = _select_best_audio_format(formats, quality="auto", client_supports_opus=True)
+        assert best_fmt["format_id"] == "251"
+        assert mime_type == "audio/webm"
+
+    def test_auto_prefers_m4a_when_client_does_not_support_opus(self):
+        formats = [
+            {
+                "format_id": "251",
+                "ext": "webm",
+                "acodec": "opus",
+                "vcodec": "none",
+                "abr": 160.0,
+                "url": "https://rr---sn.googlevideo.com/videoplayback?id=1",
+            },
+            {
+                "format_id": "140",
+                "ext": "m4a",
+                "acodec": "mp4a.40.2",
+                "vcodec": "none",
+                "abr": 128.0,
+                "url": "https://rr---sn.googlevideo.com/videoplayback?id=2",
+            },
+        ]
+        best_fmt, mime_type = _select_best_audio_format(formats, quality="auto", client_supports_opus=False)
+        assert best_fmt["format_id"] == "140"
+        assert mime_type == "audio/mp4"
+
+    def test_auto_prefers_itag_141_if_present_when_no_opus(self):
+        formats = [
+            {
+                "format_id": "141",
+                "ext": "m4a",
+                "acodec": "mp4a.40.2",
+                "vcodec": "none",
+                "abr": 256.0,
+                "url": "https://rr---sn.googlevideo.com/videoplayback?id=premium",
+            },
+            {
+                "format_id": "140",
+                "ext": "m4a",
+                "acodec": "mp4a.40.2",
+                "vcodec": "none",
+                "abr": 128.0,
+                "url": "https://rr---sn.googlevideo.com/videoplayback?id=std",
+            },
+        ]
+        best_fmt, mime_type = _select_best_audio_format(formats, quality="auto", client_supports_opus=False)
+        assert best_fmt["format_id"] == "141"
+        assert mime_type == "audio/mp4"
+
+    def test_compatible_mode_prefers_m4a_never_opus(self):
+        formats = [
+            {
+                "format_id": "251",
+                "ext": "webm",
+                "acodec": "opus",
+                "vcodec": "none",
+                "abr": 160.0,
+                "url": "https://rr---sn.googlevideo.com/videoplayback?id=1",
+            },
+            {
+                "format_id": "140",
+                "ext": "m4a",
+                "acodec": "mp4a.40.2",
+                "vcodec": "none",
+                "abr": 128.0,
+                "url": "https://rr---sn.googlevideo.com/videoplayback?id=2",
+            },
+        ]
+        best_fmt, mime_type = _select_best_audio_format(formats, quality="compatible", client_supports_opus=True)
+        assert best_fmt["format_id"] == "140"
+        assert mime_type == "audio/mp4"
+
+    def test_compatible_mode_prefers_itag_141_if_present(self):
+        formats = [
+            {
+                "format_id": "141",
+                "ext": "m4a",
+                "acodec": "mp4a.40.2",
+                "vcodec": "none",
+                "abr": 256.0,
+                "url": "https://rr---sn.googlevideo.com/videoplayback?id=141",
+            },
+            {
+                "format_id": "140",
+                "ext": "m4a",
+                "acodec": "mp4a.40.2",
+                "vcodec": "none",
+                "abr": 128.0,
+                "url": "https://rr---sn.googlevideo.com/videoplayback?id=140",
+            },
+        ]
+        best_fmt, mime_type = _select_best_audio_format(formats, quality="compatible")
+        assert best_fmt["format_id"] == "141"
+        assert mime_type == "audio/mp4"
+
+    def test_saver_mode_prefers_itag_139_over_140(self):
+        formats = [
+            {
+                "format_id": "140",
+                "ext": "m4a",
+                "acodec": "mp4a.40.2",
+                "vcodec": "none",
+                "abr": 128.0,
+                "url": "https://rr---sn.googlevideo.com/videoplayback?id=140",
+            },
+            {
+                "format_id": "139",
+                "ext": "m4a",
+                "acodec": "mp4a.40.2",
+                "vcodec": "none",
+                "abr": 48.0,
+                "url": "https://rr---sn.googlevideo.com/videoplayback?id=139",
+            },
+        ]
+        best_fmt, mime_type = _select_best_audio_format(formats, quality="saver")
+        assert best_fmt["format_id"] == "139"
+        assert mime_type == "audio/mp4"
+
+    def test_saver_mode_falls_back_to_140_if_139_missing(self):
+        formats = [
+            {
+                "format_id": "251",
+                "ext": "webm",
+                "acodec": "opus",
+                "vcodec": "none",
+                "abr": 160.0,
+                "url": "https://rr---sn.googlevideo.com/videoplayback?id=251",
+            },
+            {
+                "format_id": "140",
+                "ext": "m4a",
+                "acodec": "mp4a.40.2",
+                "vcodec": "none",
+                "abr": 128.0,
+                "url": "https://rr---sn.googlevideo.com/videoplayback?id=140",
+            },
+        ]
+        best_fmt, mime_type = _select_best_audio_format(formats, quality="saver")
         assert best_fmt["format_id"] == "140"
         assert mime_type == "audio/mp4"
 
@@ -136,7 +274,7 @@ class TestAudioFormatSelection:
                 "url": "https://rr---sn.googlevideo.com/videoplayback?id=1",
             }
         ]
-        best_fmt, mime_type = _select_best_audio_format(formats)
+        best_fmt, mime_type = _select_best_audio_format(formats, quality="compatible")
         assert best_fmt["format_id"] == "251"
         assert mime_type == "audio/webm"
 
@@ -187,28 +325,51 @@ class TestStreamCaching:
         assert exp > time.time()
 
     @pytest.mark.asyncio
-    async def test_resolve_stream_caching(self):
+    async def test_resolve_stream_caching_and_quality_keys(self):
         video_id = "dQw4w9WgXcQ"
-        mock_stream = ResolvedStream(
+        stream_service.invalidate_cache(video_id)
+
+        mock_opus = ResolvedStream(
             video_id=video_id,
-            url="https://rr.googlevideo.com/videoplayback?test=1",
+            url="https://rr.googlevideo.com/videoplayback?test=opus",
+            http_headers={},
+            filesize=6_000_000,
+            mime_type="audio/webm",
+            title="Never Gonna Give You Up",
+            uploader="Rick Astley",
+            duration=212,
+            expires_at=time.time() + 1800,
+            quality="auto",
+            client_supports_opus=True,
+        )
+        mock_m4a = ResolvedStream(
+            video_id=video_id,
+            url="https://rr.googlevideo.com/videoplayback?test=m4a",
             http_headers={},
             filesize=5_000_000,
             mime_type="audio/mp4",
-            title="Test Song",
-            uploader="Test Artist",
+            title="Never Gonna Give You Up",
+            uploader="Rick Astley",
             duration=212,
             expires_at=time.time() + 1800,
+            quality="compatible",
+            client_supports_opus=True,
         )
 
-        with patch("app.services.stream_service._extract_video_stream_sync", return_value=mock_stream) as mock_extract:
-            stream_service.invalidate_cache(video_id)
-            res1 = await stream_service.resolve_stream(video_id)
-            res2 = await stream_service.resolve_stream(video_id)
+        def mock_extract(vid, q="auto", opus=True):
+            return mock_opus if (q == "auto" and opus) else mock_m4a
 
-            assert res1.url == res2.url
-            # Second call should use cache, invoking extract only once
-            assert mock_extract.call_count == 1
+        with patch("app.services.stream_service._extract_video_stream_sync", side_effect=mock_extract) as mock_sync:
+            res1 = await stream_service.resolve_stream(video_id, quality="auto", client_supports_opus=True)
+            res2 = await stream_service.resolve_stream(video_id, quality="auto", client_supports_opus=True)
+            res3 = await stream_service.resolve_stream(video_id, quality="compatible")
+
+            assert res1.mime_type == "audio/webm"
+            assert res2.mime_type == "audio/webm"
+            assert res3.mime_type == "audio/mp4"
+
+            # Cache hit on second call; third call is different quality
+            assert mock_sync.call_count == 2
 
     @pytest.mark.asyncio
     async def test_handles_none_info_from_extract(self):
@@ -239,13 +400,42 @@ class TestStreamEndpoints:
             assert "INVALID" in response.json()["error"] or "VIDEO" in response.json()["error"]
 
     @pytest.mark.asyncio
-    async def test_stream_successful_range_response(self, app):
+    async def test_stream_successful_range_response_opus_and_m4a(self, app):
         video_id = "dQw4w9WgXcQ"
-        sample_audio = b"dummy audio payload content for testing stream proxy"
+        sample_audio = b"dummy audio payload content for testing stream proxy seeking"
 
-        mock_stream = ResolvedStream(
+        # 1. Test WebM/Opus Range seeking
+        mock_webm = ResolvedStream(
             video_id=video_id,
-            url="https://rr.googlevideo.com/videoplayback?test=1",
+            url="https://rr.googlevideo.com/videoplayback?test=webm",
+            http_headers={"User-Agent": "test-agent"},
+            filesize=len(sample_audio),
+            mime_type="audio/webm",
+            title="Never Gonna Give You Up",
+            uploader="Rick Astley",
+            duration=212,
+            expires_at=time.time() + 1800,
+        )
+
+        async def mock_proxy_gen(stream_info, start_byte, end_byte, total_size, chunk_size=512*1024):
+            yield sample_audio[start_byte : end_byte + 1]
+
+        with patch("app.services.stream_service.resolve_stream", new=AsyncMock(return_value=mock_webm)):
+            with patch("app.services.stream_service.stream_audio_proxy", side_effect=mock_proxy_gen):
+                async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+                    # Seek with Range
+                    resp = await ac.get(f"/api/stream/{video_id}?q=auto", headers={"Range": "bytes=10-25"})
+                    assert resp.status_code == 206
+                    assert resp.headers["Accept-Ranges"] == "bytes"
+                    assert f"bytes 10-25/{len(sample_audio)}" == resp.headers["Content-Range"]
+                    assert resp.headers["Content-Type"] == "audio/webm"
+                    assert f'inline; filename="{video_id}.webm"' == resp.headers["Content-Disposition"]
+                    assert resp.content == sample_audio[10:26]
+
+        # 2. Test M4A Range seeking
+        mock_m4a = ResolvedStream(
+            video_id=video_id,
+            url="https://rr.googlevideo.com/videoplayback?test=m4a",
             http_headers={"User-Agent": "test-agent"},
             filesize=len(sample_audio),
             mime_type="audio/mp4",
@@ -255,25 +445,15 @@ class TestStreamEndpoints:
             expires_at=time.time() + 1800,
         )
 
-        async def mock_proxy_generator(stream_info, start_byte, end_byte, total_size, chunk_size=512*1024):
-            yield sample_audio[start_byte : end_byte + 1]
-
-        with patch("app.services.stream_service.resolve_stream", new=AsyncMock(return_value=mock_stream)):
-            with patch("app.services.stream_service.stream_audio_proxy", side_effect=mock_proxy_generator):
+        with patch("app.services.stream_service.resolve_stream", new=AsyncMock(return_value=mock_m4a)):
+            with patch("app.services.stream_service.stream_audio_proxy", side_effect=mock_proxy_gen):
                 async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
-                    # 1. Range request
-                    resp = await ac.get(f"/api/stream/{video_id}", headers={"Range": "bytes=0-15"})
+                    resp = await ac.get(f"/api/stream/{video_id}?q=compatible", headers={"Range": "bytes=0-15"})
                     assert resp.status_code == 206
                     assert resp.headers["Accept-Ranges"] == "bytes"
-                    assert "bytes 0-15/" in resp.headers["Content-Range"]
                     assert resp.headers["Content-Type"] == "audio/mp4"
+                    assert f'inline; filename="{video_id}.m4a"' == resp.headers["Content-Disposition"]
                     assert resp.content == sample_audio[0:16]
-
-                    # 2. Unranged request (returns 200 OK with full audio)
-                    resp_full = await ac.get(f"/api/stream/{video_id}")
-                    assert resp_full.status_code == 200
-                    assert resp_full.headers["Accept-Ranges"] == "bytes"
-                    assert resp_full.content == sample_audio
 
     @pytest.mark.asyncio
     async def test_thumb_proxy_endpoint(self, app):

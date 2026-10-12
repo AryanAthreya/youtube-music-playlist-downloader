@@ -2,7 +2,15 @@
 
 import React, { useState, useEffect } from "react";
 import { useTheme, THEMES } from "../context/ThemeContext";
-import { getOfflineStorageUsage, getStorageQuotaEstimate, clearAllOfflineTracks } from "@/lib/db";
+import {
+  getOfflineStorageUsage,
+  getStorageQuotaEstimate,
+  clearAllOfflineTracks,
+  getStreamingQualitySetting,
+  setStreamingQualitySetting,
+  isOpusSupported,
+  type StreamingQualitySetting,
+} from "@/lib/db";
 import { formatFileSize } from "@/lib/websocket";
 
 interface ThemeSelectorModalProps {
@@ -14,10 +22,14 @@ export function ThemeSelectorModal({ isOpen, onClose }: ThemeSelectorModalProps)
   const { theme, setTheme, config } = useTheme();
   const [offlineUsage, setOfflineUsage] = useState<{ count: number; totalBytes: number }>({ count: 0, totalBytes: 0 });
   const [quota, setQuota] = useState<{ percentUsed: number; quotaBytes: number; usageBytes: number }>({ percentUsed: 0, quotaBytes: 0, usageBytes: 0 });
+  const [quality, setQuality] = useState<StreamingQualitySetting>("auto");
+  const [opusSupported, setOpusSupported] = useState<boolean>(true);
 
   const refreshStorage = () => {
     getOfflineStorageUsage().then(setOfflineUsage).catch(() => {});
     getStorageQuotaEstimate().then(setQuota).catch(() => {});
+    getStreamingQualitySetting().then(setQuality).catch(() => {});
+    setOpusSupported(isOpusSupported());
   };
 
   useEffect(() => {
@@ -27,6 +39,11 @@ export function ThemeSelectorModal({ isOpen, onClose }: ThemeSelectorModalProps)
       return () => window.removeEventListener("ytdl_offline_updated", refreshStorage);
     }
   }, [isOpen]);
+
+  const handleQualityChange = async (newQuality: StreamingQualitySetting) => {
+    setQuality(newQuality);
+    await setStreamingQualitySetting(newQuality);
+  };
 
   const handleClearOffline = async () => {
     if (!confirm("Remove all saved offline tracks from this device?")) return;
@@ -127,7 +144,83 @@ export function ThemeSelectorModal({ isOpen, onClose }: ThemeSelectorModalProps)
           </div>
         </div>
 
-        {/* Section 2: Offline Storage Management */}
+        {/* Section 2: Streaming Quality */}
+        <div className="pt-3 border-t border-white/10 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Streaming Quality</span>
+            <span className="text-[10px] text-zinc-500 font-mono">
+              {quality === "auto"
+                ? opusSupported
+                  ? "Opus ~160k"
+                  : "AAC ~128k"
+                : quality === "compatible"
+                ? "AAC ~128k"
+                : "m4a ~48k"}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => handleQualityChange("auto")}
+              className={`p-2.5 rounded-2xl border text-left transition-all ${
+                quality === "auto"
+                  ? "bg-white/15 border-white/30 text-white shadow-sm ring-1 ring-white/20"
+                  : "bg-zinc-900/60 border-white/5 text-zinc-400 hover:text-white hover:bg-zinc-900"
+              }`}
+            >
+              <div className="text-xs font-bold flex items-center justify-between">
+                Auto
+                {quality === "auto" && <span className="text-[10px] text-emerald-400">●</span>}
+              </div>
+              <p className="text-[9.5px] text-zinc-400 mt-0.5 leading-tight">
+                Opus (~160k) if supported
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleQualityChange("compatible")}
+              className={`p-2.5 rounded-2xl border text-left transition-all ${
+                quality === "compatible"
+                  ? "bg-white/15 border-white/30 text-white shadow-sm ring-1 ring-white/20"
+                  : "bg-zinc-900/60 border-white/5 text-zinc-400 hover:text-white hover:bg-zinc-900"
+              }`}
+            >
+              <div className="text-xs font-bold flex items-center justify-between">
+                Compatible
+                {quality === "compatible" && <span className="text-[10px] text-emerald-400">●</span>}
+              </div>
+              <p className="text-[9.5px] text-zinc-400 mt-0.5 leading-tight">
+                AAC only (~128k)
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleQualityChange("saver")}
+              className={`p-2.5 rounded-2xl border text-left transition-all ${
+                quality === "saver"
+                  ? "bg-white/15 border-white/30 text-white shadow-sm ring-1 ring-white/20"
+                  : "bg-zinc-900/60 border-white/5 text-zinc-400 hover:text-white hover:bg-zinc-900"
+              }`}
+            >
+              <div className="text-xs font-bold flex items-center justify-between">
+                Data Saver
+                {quality === "saver" && <span className="text-[10px] text-emerald-400">●</span>}
+              </div>
+              <p className="text-[9.5px] text-zinc-400 mt-0.5 leading-tight">
+                Low-bitrate (~48k)
+              </p>
+            </button>
+          </div>
+
+          <p className="text-[10px] text-zinc-500 leading-normal pt-0.5">
+            💡 YouTube audio tops out around 128–160 kbps (256 kbps AAC is only available with YouTube Premium cookies).
+          </p>
+        </div>
+
+        {/* Section 3: Offline Storage Management */}
         <div className="pt-3 border-t border-white/10 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Offline Storage</span>

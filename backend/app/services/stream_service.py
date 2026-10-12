@@ -60,9 +60,13 @@ class ResolvedStream:
     uploader: str | None
     duration: int | None
     expires_at: float  # Unix timestamp
+    format_id: str | None = None
+    ext: str = "m4a"
+    quality: str = "auto"
+    client_supports_opus: bool = True
 
 
-# Bounded in-memory TTL cache: video_id -> ResolvedStream
+# Bounded in-memory TTL cache: "{video_id}:{quality}" -> ResolvedStream
 _STREAM_CACHE: dict[str, ResolvedStream] = {}
 _MAX_CACHE_ENTRIES = 200
 _DEFAULT_TTL_SECONDS = 1800  # 30 minutes fallback
@@ -103,17 +107,26 @@ def _extract_stream_expiry(url: str) -> float:
     return time.time() + _DEFAULT_TTL_SECONDS
 
 
-def _select_best_audio_format(formats: list[dict]) -> tuple[dict, str]:
-    """Select the best progressive audio stream.
+def _select_best_audio_format(
+    formats: list[dict],
+    quality: str = "auto",
+    client_supports_opus: bool = True,
+) -> tuple[dict, str]:
+    """Select progressive audio stream based on quality mode and client codec support.
 
-    Preference order:
-    1. Progressive HTTPS m4a (AAC) without video (format 140 or similar)
-    2. Other progressive HTTPS audio-only formats (webm/opus)
-    3. Exclude DASH / HLS manifests (protocol 'm3u8', 'http_dash_segments', etc.)
+    Modes:
+    - 'auto': Prefer itag 251 (opus ~160k) if client signals opus support.
+              Otherwise itag 141 if present (Premium ~256k AAC), then 140 (m4a 128k).
+    - 'compatible': m4a/AAC only (itag 141 if present, then 140, then any m4a).
+    - 'saver': Lowest-bitrate m4a (itag 139 ~48k, then 140).
 
     Returns:
         tuple[dict, str]: (selected format dict, mime_type)
     """
+    quality = quality.lower().strip() if quality else "auto"
+    if quality not in ("auto", "compatible", "saver"):
+        quality = "auto"
+
     candidates = []
     for fmt in formats:
         # Must have an audio codec and no video
@@ -135,29 +148,132 @@ def _select_best_audio_format(formats: list[dict]) -> tuple[dict, str]:
         if ".m3u8" in url or ".mpd" in url:
             continue
 
+        fmt_id = str(fmt.get("format_id") or "")
         ext = (fmt.get("ext") or "").lower()
-        abr = fmt.get("abr") or 0.0
+        abr = float(fmt.get("abr") or 0.0)
         filesize = fmt.get("filesize") or fmt.get("filesize_approx") or 0
 
-        candidates.append((fmt, ext, abr, filesize))
+        candidates.append({
+            "fmt": fmt,
+            "format_id": fmt_id,
+            "ext": ext,
+            "acodec": str(acodec).lower(),
+            "abr": abr,
+            "filesize": filesize,
+        })
 
     if not candidates:
         raise FormatUnavailableError("No direct progressive audio stream available for this video.")
 
-    # Sort: prefer m4a over other formats, then by abr descending
-    def sort_key(item):
-        fmt, ext, abr, filesize = item
-        ext_score = 2 if ext == "m4a" else (1 if ext in ("webm", "opus", "ogg") else 0)
-        return (ext_score, abr, filesize)
+    selected_fmt = None
+    selected_ext = "m4a"
 
-    candidates.sort(key=sort_key, reverse=True)
-    best_fmt, ext, _, _ = candidates[0]
+    if quality == "saver":
+        # Lowest-bitrate m4a: prefer itag 139, then lowest abr m4a, then 140
+        itag_139 = next((c for c in candidates if c["format_id"] == "139"), None)
+        if itag_139:
+            selected_fmt = itag_139["fmt"]
+            selected_ext = itag_139["ext"]
+        else:
+            m4a_candidates = [
+                c for c in candidates
+                if c["ext"] in ("m4a", "mp4") or "mp4a" in c["acodec"] or "aac" in c["acodec"]
+            ]
+            if m4a_candidates:
+                m4a_candidates.sort(key=lambda c: (c["abr"] if c["abr"] > 0 else 9999, c["filesize"]))
+                selected_fmt = m4a_candidates[0]["fmt"]
+                selected_ext = m4a_candidates[0]["ext"]
+            else:
+                candidates.sort(key=lambda c: (c["abr"] if c["abr"] > 0 else 9999, c["filesize"]))
+                selected_fmt = candidates[0]["fmt"]
+                selected_ext = candidates[0]["ext"]
 
-    mime_type = "audio/mp4" if ext == "m4a" else ("audio/webm" if ext == "webm" else "audio/ogg")
-    return best_fmt, mime_type
+    elif quality == "compatible":
+        # m4a/AAC only: prefer itag 141 (Premium), then 140, then highest abr m4a
+        itag_141 = next((c for c in candidates if c["format_id"] == "141"), None)
+        itag_140 = next((c for c in candidates if c["format_id"] == "140"), None)
+        if itag_141:
+            selected_fmt = itag_141["fmt"]
+            selected_ext = itag_141["ext"]
+        elif itag_140:
+            selected_fmt = itag_140["fmt"]
+            selected_ext = itag_140["ext"]
+        else:
+            m4a_candidates = [
+                c for c in candidates
+                if c["ext"] in ("m4a", "mp4") or "mp4a" in c["acodec"] or "aac" in c["acodec"]
+            ]
+            if m4a_candidates:
+                m4a_candidates.sort(key=lambda c: (c["abr"], c["filesize"]), reverse=True)
+                selected_fmt = m4a_candidates[0]["fmt"]
+                selected_ext = m4a_candidates[0]["ext"]
+            else:
+                candidates.sort(key=lambda c: (c["abr"], c["filesize"]), reverse=True)
+                selected_fmt = candidates[0]["fmt"]
+                selected_ext = candidates[0]["ext"]
+
+    else:  # quality == "auto"
+        if client_supports_opus:
+            # Prefer itag 251 (opus ~160k)
+            itag_251 = next((c for c in candidates if c["format_id"] == "251"), None)
+            if not itag_251:
+                itag_251 = next((c for c in candidates if "opus" in c["acodec"] and c["abr"] >= 120), None)
+
+            if itag_251:
+                selected_fmt = itag_251["fmt"]
+                selected_ext = itag_251["ext"]
+            else:
+                itag_141 = next((c for c in candidates if c["format_id"] == "141"), None)
+                itag_140 = next((c for c in candidates if c["format_id"] == "140"), None)
+                if itag_141:
+                    selected_fmt = itag_141["fmt"]
+                    selected_ext = itag_141["ext"]
+                elif itag_140:
+                    selected_fmt = itag_140["fmt"]
+                    selected_ext = itag_140["ext"]
+                else:
+                    candidates.sort(key=lambda c: (c["abr"], c["filesize"]), reverse=True)
+                    selected_fmt = candidates[0]["fmt"]
+                    selected_ext = candidates[0]["ext"]
+        else:
+            itag_141 = next((c for c in candidates if c["format_id"] == "141"), None)
+            itag_140 = next((c for c in candidates if c["format_id"] == "140"), None)
+            if itag_141:
+                selected_fmt = itag_141["fmt"]
+                selected_ext = itag_141["ext"]
+            elif itag_140:
+                selected_fmt = itag_140["fmt"]
+                selected_ext = itag_140["ext"]
+            else:
+                m4a_candidates = [
+                    c for c in candidates
+                    if c["ext"] in ("m4a", "mp4") or "mp4a" in c["acodec"] or "aac" in c["acodec"]
+                ]
+                if m4a_candidates:
+                    m4a_candidates.sort(key=lambda c: (c["abr"], c["filesize"]), reverse=True)
+                    selected_fmt = m4a_candidates[0]["fmt"]
+                    selected_ext = m4a_candidates[0]["ext"]
+                else:
+                    candidates.sort(key=lambda c: (c["abr"], c["filesize"]), reverse=True)
+                    selected_fmt = candidates[0]["fmt"]
+                    selected_ext = candidates[0]["ext"]
+
+    acodec_str = str(selected_fmt.get("acodec") or "").lower()
+    if selected_ext in ("webm", "opus") or "opus" in acodec_str:
+        mime_type = "audio/webm"
+    elif selected_ext in ("m4a", "mp4") or "mp4a" in acodec_str or "aac" in acodec_str:
+        mime_type = "audio/mp4"
+    else:
+        mime_type = "audio/mp4"
+
+    return selected_fmt, mime_type
 
 
-def _extract_video_stream_sync(video_id: str) -> ResolvedStream:
+def _extract_video_stream_sync(
+    video_id: str,
+    quality: str = "auto",
+    client_supports_opus: bool = True,
+) -> ResolvedStream:
     """Synchronous extraction of video audio stream via yt-dlp."""
     settings = get_settings()
     url = f"https://www.youtube.com/watch?v={video_id}"
@@ -176,7 +292,11 @@ def _extract_video_stream_sync(video_id: str) -> ResolvedStream:
     if not formats:
         raise FormatUnavailableError(f"No streams found for video {video_id}.")
 
-    best_fmt, mime_type = _select_best_audio_format(formats)
+    best_fmt, mime_type = _select_best_audio_format(
+        formats,
+        quality=quality,
+        client_supports_opus=client_supports_opus,
+    )
 
     stream_url = best_fmt.get("url")
     if not stream_url:
@@ -184,7 +304,6 @@ def _extract_video_stream_sync(video_id: str) -> ResolvedStream:
 
     # Collect custom HTTP headers returned by yt-dlp extractor for this format
     headers = best_fmt.get("http_headers") or info.get("http_headers") or {}
-    # Keep only safe user headers (e.g. User-Agent)
     safe_headers = {}
     for k, v in headers.items():
         if k.lower() in ("user-agent", "accept-language"):
@@ -192,6 +311,8 @@ def _extract_video_stream_sync(video_id: str) -> ResolvedStream:
 
     filesize = best_fmt.get("filesize") or best_fmt.get("filesize_approx") or 0
     expires_at = _extract_stream_expiry(stream_url)
+    fmt_id = best_fmt.get("format_id")
+    ext = best_fmt.get("ext") or ("webm" if mime_type == "audio/webm" else "m4a")
 
     return ResolvedStream(
         video_id=video_id,
@@ -203,21 +324,45 @@ def _extract_video_stream_sync(video_id: str) -> ResolvedStream:
         uploader=info.get("uploader") or info.get("channel"),
         duration=info.get("duration"),
         expires_at=expires_at,
+        format_id=fmt_id,
+        ext=ext,
+        quality=quality,
+        client_supports_opus=client_supports_opus,
     )
 
 
-async def resolve_stream(video_id: str, force_refresh: bool = False) -> ResolvedStream:
-    """Resolve direct audio stream metadata with caching and TTL check."""
+async def resolve_stream(
+    video_id: str,
+    quality: str = "auto",
+    client_supports_opus: bool = True,
+    force_refresh: bool = False,
+) -> ResolvedStream:
+    """Resolve direct audio stream metadata with quality-aware caching and TTL check."""
     validate_video_id(video_id)
+    quality = quality.lower().strip() if quality else "auto"
+    if quality not in ("auto", "compatible", "saver"):
+        quality = "auto"
+
     now = time.time()
+    if quality == "auto":
+        cache_quality = "auto_opus" if client_supports_opus else "auto_m4a"
+    else:
+        cache_quality = quality
+    cache_key = f"{video_id}:{cache_quality}"
 
     if not force_refresh:
-        cached = _STREAM_CACHE.get(video_id)
+        cached = _STREAM_CACHE.get(cache_key)
         if cached and cached.expires_at > (now + 60):  # At least 60s valid
             return cached
 
     loop = asyncio.get_running_loop()
-    resolved = await loop.run_in_executor(_stream_executor, _extract_video_stream_sync, video_id)
+    resolved = await loop.run_in_executor(
+        _stream_executor,
+        _extract_video_stream_sync,
+        video_id,
+        quality,
+        client_supports_opus,
+    )
 
     # Evict if cache exceeds max size
     if len(_STREAM_CACHE) >= _MAX_CACHE_ENTRIES:
@@ -230,13 +375,15 @@ async def resolve_stream(video_id: str, force_refresh: bool = False) -> Resolved
             for k in list(_STREAM_CACHE.keys())[:20]:
                 _STREAM_CACHE.pop(k, None)
 
-    _STREAM_CACHE[video_id] = resolved
+    _STREAM_CACHE[cache_key] = resolved
     return resolved
 
 
 def invalidate_cache(video_id: str) -> None:
-    """Invalidate cache entry on 403 or 410 from upstream."""
-    _STREAM_CACHE.pop(video_id, None)
+    """Invalidate cache entries for this video_id across all quality variants."""
+    keys_to_remove = [k for k in list(_STREAM_CACHE.keys()) if k == video_id or k.startswith(f"{video_id}:")]
+    for k in keys_to_remove:
+        _STREAM_CACHE.pop(k, None)
 
 
 async def stream_audio_proxy(
@@ -276,8 +423,13 @@ async def stream_audio_proxy(
                             response.status_code,
                         )
                         invalidate_cache(stream_info.video_id)
-                        # Re-resolve once
-                        fresh = await resolve_stream(stream_info.video_id, force_refresh=True)
+                        # Re-resolve once preserving quality and opus capability
+                        fresh = await resolve_stream(
+                            stream_info.video_id,
+                            quality=stream_info.quality,
+                            client_supports_opus=stream_info.client_supports_opus,
+                            force_refresh=True,
+                        )
                         stream_info.url = fresh.url
                         # Retry current chunk with fresh URL
                         async with client.stream("GET", fresh.url, headers=req_headers) as retry_resp:

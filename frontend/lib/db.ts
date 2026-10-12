@@ -525,3 +525,86 @@ export async function importPlaylistsFromJson(jsonString: string): Promise<{ imp
   await saveAllPlaylists(merged);
   return { imported: count };
 }
+
+// ── STREAMING QUALITY SETTINGS ─────────────────────────────────────────────
+
+export type StreamingQualitySetting = "auto" | "compatible" | "saver";
+
+let cachedQualitySetting: StreamingQualitySetting = "auto";
+
+if (typeof window !== "undefined") {
+  // Prime cached setting on client load
+  setTimeout(() => {
+    getStreamingQualitySetting().then((q) => {
+      cachedQualitySetting = q;
+    });
+  }, 0);
+  window.addEventListener("ytdl_streaming_quality_changed", ((e: CustomEvent) => {
+    if (e.detail) cachedQualitySetting = e.detail;
+  }) as EventListener);
+}
+
+/**
+ * Return in-memory cached streaming quality setting (synchronous).
+ */
+export function getCurrentStreamingQuality(): StreamingQualitySetting {
+  return cachedQualitySetting;
+}
+
+/**
+ * Detect browser opus in webm container support using Audio.canPlayType.
+ */
+export function isOpusSupported(): boolean {
+  if (typeof window === "undefined" || typeof Audio === "undefined") {
+    return false;
+  }
+  try {
+    const audio = new Audio();
+    const canPlay = audio.canPlayType('audio/webm; codecs="opus"');
+    return canPlay === "probably" || canPlay === "maybe";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Retrieve current user streaming quality setting from IndexedDB (defaults to "auto").
+ */
+export async function getStreamingQualitySetting(): Promise<StreamingQualitySetting> {
+  const dbPromiseRef = getDB();
+  if (!dbPromiseRef) return "auto";
+  try {
+    const db = await dbPromiseRef;
+    const record = await db.get("settings", "streamingQuality");
+    if (record && (record.value === "auto" || record.value === "compatible" || record.value === "saver")) {
+      return record.value as StreamingQualitySetting;
+    }
+  } catch {}
+  return "auto";
+}
+
+/**
+ * Save user streaming quality setting to IndexedDB.
+ */
+export async function setStreamingQualitySetting(quality: StreamingQualitySetting): Promise<void> {
+  const dbPromiseRef = getDB();
+  if (!dbPromiseRef) return;
+  try {
+    const db = await dbPromiseRef;
+    await db.put("settings", { key: "streamingQuality", value: quality, updatedAt: Date.now() });
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("ytdl_streaming_quality_changed", { detail: quality }));
+    }
+  } catch {}
+}
+
+/**
+ * Determine effective streaming quality query parameter to send to the backend.
+ * If user set "auto", checks browser opus support and sends "auto" if supported,
+ * or "compatible" if not supported (e.g. older iOS Safari).
+ */
+export function getEffectiveStreamingQuality(setting: StreamingQualitySetting = "auto"): "auto" | "compatible" | "saver" {
+  if (setting === "compatible") return "compatible";
+  if (setting === "saver") return "saver";
+  return isOpusSupported() ? "auto" : "compatible";
+}

@@ -23,21 +23,30 @@ router = APIRouter(prefix="/api", tags=["stream"])
 @router.get("/stream/{video_id}")
 async def stream_audio(
     video_id: str,
+    q: str = Query(default="auto", description="Streaming quality: auto | compatible | saver"),
     range: str | None = Header(default=None),
+    accept: str | None = Header(default=None),
 ) -> Response:
-    """Stream YouTube audio on-demand as progressive audio/mp4 (Range-aware).
+    """Stream YouTube audio on-demand as progressive audio stream (Range-aware).
 
     Fetches direct audio stream from YouTube CDN via chunked ranged proxy,
     bypassing YouTube throttling. Fully supports seeking via HTTP 206 Partial Content.
 
     Args:
         video_id: 11-character YouTube video ID.
+        q: Quality mode ('auto', 'compatible', or 'saver').
         range: Standard HTTP Range header (e.g. 'bytes=0-1048576').
+        accept: Standard HTTP Accept header signaling client codec support.
 
     Returns:
         StreamingResponse: Chunked audio stream with Range headers.
     """
     stream_service.validate_video_id(video_id)
+
+    # Normalize quality parameter
+    normalized_q = q.lower().strip() if q else "auto"
+    if normalized_q not in ("auto", "compatible", "saver"):
+        normalized_q = "auto"
 
     # Concurrency guard: check semaphore without blocking indefinitely
     semaphore = stream_service.get_stream_semaphore()
@@ -48,11 +57,27 @@ async def stream_audio(
             headers={"Retry-After": "5"},
         )
 
+    # Detect if client signals opus support from Accept header
+    client_signals_opus = True
+    if accept:
+        acc_lower = accept.lower()
+        if (
+            "audio/" in acc_lower
+            and "audio/webm" not in acc_lower
+            and "*/*" not in acc_lower
+            and "opus" not in acc_lower
+        ):
+            client_signals_opus = False
+
     # Acquire semaphore for this stream session
     await semaphore.acquire()
 
     try:
-        stream_info = await stream_service.resolve_stream(video_id)
+        stream_info = await stream_service.resolve_stream(
+            video_id,
+            quality=normalized_q,
+            client_supports_opus=client_signals_opus,
+        )
 
         # Determine total size
         total_size = stream_info.filesize
@@ -79,12 +104,13 @@ async def stream_audio(
         content_length = end - start + 1
         is_partial = range is not None
 
+        filename_ext = "webm" if "webm" in stream_info.mime_type else "m4a"
         headers = {
             "Content-Type": stream_info.mime_type,
             "Content-Length": str(content_length),
             "Accept-Ranges": "bytes",
             "Content-Range": f"bytes {start}-{end}/{total_size}",
-            "Content-Disposition": f'inline; filename="{video_id}.m4a"',
+            "Content-Disposition": f'inline; filename="{video_id}.{filename_ext}"',
         }
 
         async def stream_generator():

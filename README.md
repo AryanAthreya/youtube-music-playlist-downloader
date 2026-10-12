@@ -109,7 +109,7 @@ Caddy Reverse Proxy (Auto TLS / DuckDNS HTTP Challenge)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/stream/{video_id}` | Range-aware chunked audio stream (512 KB upstream chunks, direct from YouTube) |
+| `GET` | `/api/stream/{video_id}?q=auto\|compatible\|saver` | Range-aware chunked audio stream (512 KB upstream chunks, direct from YouTube). Supports `auto` (Opus ~160k with browser support), `compatible` (M4A/AAC ~128k), or `saver` (M4A ~48k). |
 | `GET` | `/api/thumb?id={video_id}` | Proxied YouTube video thumbnail (prevents referrer leakage and mixed-content issues) |
 | `POST` | `/api/search` | Search YouTube keywords; returns top 15 matches |
 | `POST` | `/api/info` | Fetch video/playlist metadata + available resolutions/bitrates |
@@ -122,6 +122,8 @@ Caddy Reverse Proxy (Auto TLS / DuckDNS HTTP Challenge)
 | `GET` | `/api/files/{filename}` | Stream / download file by filename |
 | `DELETE` | `/api/files/{filename}` | Delete completed file from disk |
 | `GET` | `/api/health` | Comprehensive dependency check (FastAPI, yt-dlp, FFmpeg, Deno) |
+
+> 💡 **Audio Quality Note**: YouTube streaming audio natively tops out around 128–160 kbps (Opus `itag 251` ~160 kbps, AAC `itag 140` ~128 kbps). Higher bitrate 256 kbps AAC (`itag 141`) is only served by YouTube for accounts authenticated with YouTube Premium cookies.
 
 ---
 
@@ -140,7 +142,7 @@ youtube-music-playlist-downloader/
 │   │   ├── services/            # yt_dlp_client, format_selector, job_manager, stream_service
 │   │   ├── models/              # Job dataclasses & enums
 │   │   └── schemas/             # Pydantic request/response schemas
-│   └── tests/                   # Pytest test suite (85 tests)
+│   └── tests/                   # Pytest test suite (91 tests)
 ├── frontend/
 │   ├── Dockerfile               # Multi-stage Next.js 16 standalone build
 │   ├── app/                     # Next.js App Router (homepage, layout, manifest, offline)
@@ -167,7 +169,7 @@ youtube-music-playlist-downloader/
 ## CI / CD Pipeline
 
 The automated GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and pull request to `main`:
-1. **Backend Tests**: Sets up Python 3.12, installs dependencies, and runs the 85-test pytest suite.
+1. **Backend Tests**: Sets up Python 3.12, installs dependencies, and runs the 91-test pytest suite.
 2. **Frontend Typecheck & Build**: Sets up Node.js 22, performs TypeScript verification, and generates static Next.js pages.
 3. **Docker Validation**: Verifies `docker-compose.yml` config and builds both images.
 

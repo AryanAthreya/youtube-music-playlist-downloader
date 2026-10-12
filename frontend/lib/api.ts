@@ -197,11 +197,15 @@ export async function deleteFileByName(filename: string): Promise<{ message: str
   });
 }
 
+import { getCurrentStreamingQuality, getEffectiveStreamingQuality } from "./db";
+
 /**
- * Get direct stream URL for a YouTube video ID.
+ * Get direct stream URL for a YouTube video ID with quality parameter.
  */
-export function getStreamUrl(videoId: string): string {
-  return `${API_BASE}/api/stream/${encodeURIComponent(videoId)}`;
+export function getStreamUrl(videoId: string, quality?: string): string {
+  const q = quality || getEffectiveStreamingQuality(getCurrentStreamingQuality());
+  const qParam = q ? `?q=${encodeURIComponent(q)}` : "";
+  return `${API_BASE}/api/stream/${encodeURIComponent(videoId)}${qParam}`;
 }
 
 /**
