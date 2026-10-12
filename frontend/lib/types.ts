@@ -177,6 +177,11 @@ export interface FileInfo {
   album?: string | null;
   is_preview?: boolean;
   youtube_id?: string;
+  source_type?: "library" | "stream" | "offline";
+  stream_url?: string;
+  offline_blob_url?: string;  // Ephemeral object URL (created at runtime, never stored)
+  duration?: number | null;
+  artist?: string | null;
 }
 
 export interface FilesListResponse {

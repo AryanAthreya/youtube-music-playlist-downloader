@@ -18,6 +18,8 @@ interface PlaylistVideoListProps {
   onSelectionChange: (ids: string[]) => void;
   onDownload: (request: Omit<DownloadRequest, "playlist_video_ids">) => void;
   onReset: () => void;
+  onPlayPlaylist?: (videos: PlaylistInfoResponse["videos"], startIndex?: number) => void;
+  onPlayTrack?: (video: PlaylistInfoResponse["videos"][0]) => void;
 }
 
 function formatDuration(seconds: number | null): string {
@@ -34,6 +36,8 @@ export function PlaylistVideoList({
   onSelectionChange,
   onDownload,
   onReset,
+  onPlayPlaylist,
+  onPlayTrack,
 }: PlaylistVideoListProps) {
   const [mode, setMode] = useState<DownloadMode>("video");
   // Placeholder quality state — in a real flow these come from a per-video info fetch
@@ -97,10 +101,23 @@ export function PlaylistVideoList({
 
       <div className="rounded-2xl border border-gray-700/50 bg-gray-800/50 backdrop-blur overflow-hidden">
         {/* Header */}
-        <div className="p-5 border-b border-gray-700/50">
-          <h2 className="text-lg font-semibold text-white">{info.title}</h2>
-          {info.uploader && <p className="text-gray-400 text-sm mt-0.5">{info.uploader}</p>}
-          <p className="text-gray-500 text-sm mt-1">{info.video_count} videos</p>
+        <div className="p-5 border-b border-gray-700/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-white">{info.title}</h2>
+            {info.uploader && <p className="text-gray-400 text-sm mt-0.5">{info.uploader}</p>}
+            <p className="text-gray-500 text-sm mt-1">{info.video_count} videos</p>
+          </div>
+          {onPlayPlaylist && (
+            <button
+              onClick={() => onPlayPlaylist(info.videos, 0)}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs flex items-center gap-2 shadow-lg shadow-emerald-950/40 active:scale-95 transition-all self-start sm:self-auto"
+            >
+              <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+              <span>Stream Entire Playlist</span>
+            </button>
+          )}
         </div>
 
         {/* Selection controls */}
@@ -156,11 +173,29 @@ export function PlaylistVideoList({
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-white font-medium truncate">{video.title}</p>
                 </div>
-                {video.duration && (
-                  <span className="text-xs text-gray-500 font-mono shrink-0">
-                    {formatDuration(video.duration)}
-                  </span>
-                )}
+                <div className="flex items-center gap-2 shrink-0">
+                  {onPlayTrack && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onPlayTrack(video);
+                      }}
+                      className="p-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-white transition-colors"
+                      title="Stream this track"
+                    >
+                      <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </button>
+                  )}
+                  {video.duration && (
+                    <span className="text-xs text-gray-500 font-mono">
+                      {formatDuration(video.duration)}
+                    </span>
+                  )}
+                </div>
               </label>
             );
           })}

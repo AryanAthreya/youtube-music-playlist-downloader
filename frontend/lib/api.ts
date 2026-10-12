@@ -9,6 +9,7 @@ import type {
   APIError,
   CreateJobResponse,
   DownloadRequest,
+  FileInfo,
   FilesListResponse,
   HealthResponse,
   InfoResponse,
@@ -197,11 +198,42 @@ export async function deleteFileByName(filename: string): Promise<{ message: str
 }
 
 /**
+ * Get direct stream URL for a YouTube video ID.
+ */
+export function getStreamUrl(videoId: string): string {
+  return `${API_BASE}/api/stream/${encodeURIComponent(videoId)}`;
+}
+
+/**
+ * Get proxied thumbnail URL for a YouTube video ID.
+ */
+export function getThumbProxyUrl(videoId: string): string {
+  return `${API_BASE}/api/thumb?id=${encodeURIComponent(videoId)}`;
+}
+
+/**
+ * Resolve track audio URL following the 3-tier priority order:
+ * 1. Ephemeral offline Blob object URL (if present)
+ * 2. Library file on disk (if standard downloaded file)
+ * 3. YouTube stream URL (if stream track)
+ */
+export function resolveTrackAudioUrl(track: FileInfo | null | undefined): string {
+  if (!track) return "";
+  if (track.offline_blob_url) {
+    return track.offline_blob_url;
+  }
+  if (track.source_type === "stream" || (!track.size_bytes && track.youtube_id && !track.album)) {
+    return track.stream_url || (track.youtube_id ? getStreamUrl(track.youtube_id) : "");
+  }
+  return getFileByNameUrl(track.filename, true);
+}
+
+/**
  * Resolve relative media / thumbnail URLs to full API URLs with API_BASE.
  */
 export function resolveMediaUrl(url: string | null | undefined): string {
   if (!url) return "";
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("blob:")) return url;
   const clean = url.startsWith("/") ? url : `/${url}`;
   return `${API_BASE}${clean}`;
 }

@@ -35,16 +35,16 @@
 ---
 
 ### Phase 2: Frontend Stream Playback Integration
-- [ ] Add optional stream fields to `FileInfo` in `frontend/lib/types.ts` (`source_type`, `stream_url`, ephemeral `offline_blob_url`, `duration`, `artist`)
-- [ ] Add `getStreamUrl` and `getThumbProxyUrl` in `frontend/lib/api.ts`
-- [ ] Implement audio source resolution order: ephemeral offline blob (at play time only) → library file → stream URL
-- [ ] Enhance `frontend/components/SearchResults.tsx` with direct "Play" stream action alongside "Download" and iframe preview
-- [ ] Enhance `frontend/components/PlaylistVideoList.tsx` with "Play All" and track stream play
-- [ ] Add Media Session API handler in `frontend/components/NowPlayingSection.tsx` (lock screen metadata & controls)
-- [ ] Handle playback states: buffering, stream errors, auto-skip to next track on failure
-- [ ] Verify responsive layout, touch targets, and safe-area insets
-- [ ] Run `npm --prefix frontend run build` & lint
-- [ ] Commit Phase 2 changes to git
+- [x] Add optional stream fields to `FileInfo` in `frontend/lib/types.ts` (`source_type`, `stream_url`, ephemeral `offline_blob_url`, `duration`, `artist`)
+- [x] Add `getStreamUrl` and `getThumbProxyUrl` in `frontend/lib/api.ts`
+- [x] Implement audio source resolution order: ephemeral offline blob (at play time only) → library file → stream URL
+- [x] Enhance `frontend/components/SearchResults.tsx` with direct "Play" stream action alongside "Download" and iframe preview
+- [x] Enhance `frontend/components/PlaylistVideoList.tsx` with "Play All" and track stream play
+- [x] Add Media Session API handler in `frontend/components/NowPlayingSection.tsx` (lock screen metadata & controls)
+- [x] Handle playback states: buffering, stream errors, auto-skip to next track on failure
+- [x] Verify responsive layout, touch targets, and safe-area insets
+- [x] Run `npm --prefix frontend run build` & lint
+- [x] Commit Phase 2 changes to git
 
 ---
 

@@ -9,6 +9,7 @@ interface SearchResultsProps {
   results: SearchResultItem[];
   onSelectVideo: (url: string) => void;
   onPlayPreview?: (item: SearchResultItem) => void;
+  onStreamTrack?: (item: SearchResultItem) => void;
   onReset: () => void;
   onLoadMore?: (query: string) => void;
 }
@@ -28,6 +29,7 @@ export function SearchResults({
   results,
   onSelectVideo,
   onPlayPreview,
+  onStreamTrack,
   onReset,
   onLoadMore,
 }: SearchResultsProps) {
@@ -43,7 +45,7 @@ export function SearchResults({
             <span className="text-indigo-400 font-mono">"{query}"</span>
           </h2>
           <p className="text-xs text-gray-400">
-            Showing {Math.min(visible, results.length)} of {results.length} results. Click to select format and download.
+            Showing {Math.min(visible, results.length)} of {results.length} results. Click to play or download.
           </p>
         </div>
 
@@ -71,7 +73,7 @@ export function SearchResults({
                 {/* Thumbnail */}
                 <div
                   className="relative aspect-video bg-slate-950 overflow-hidden cursor-pointer"
-                  onClick={() => onSelectVideo(item.url)}
+                  onClick={() => (onStreamTrack ? onStreamTrack(item) : onSelectVideo(item.url))}
                 >
                   {item.thumbnail ? (
                     <img
@@ -86,15 +88,19 @@ export function SearchResults({
                     </div>
                   )}
 
-                  {/* Instant Play / Preview Button on Thumbnail */}
-                  {onPlayPreview && (
+                  {/* Play Button on Thumbnail */}
+                  {(onStreamTrack || onPlayPreview) && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        onPlayPreview(item);
+                        if (onStreamTrack) {
+                          onStreamTrack(item);
+                        } else if (onPlayPreview) {
+                          onPlayPreview(item);
+                        }
                       }}
-                      className="absolute inset-0 m-auto w-12 h-12 rounded-full bg-black/60 hover:bg-red-600 active:scale-90 text-white flex items-center justify-center backdrop-blur-md border border-white/20 opacity-0 group-hover:opacity-100 transition-all shadow-xl"
-                      title="Play / Preview in Player"
+                      className="absolute inset-0 m-auto w-12 h-12 rounded-full bg-black/60 hover:bg-emerald-600 active:scale-90 text-white flex items-center justify-center backdrop-blur-md border border-white/20 opacity-0 group-hover:opacity-100 transition-all shadow-xl"
+                      title="Play stream online"
                     >
                       <svg className="w-5 h-5 ml-0.5 fill-current" viewBox="0 0 24 24">
                         <path d="M8 5v14l11-7z" />
@@ -111,7 +117,7 @@ export function SearchResults({
 
                 {/* Info */}
                 <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
-                  <div onClick={() => onSelectVideo(item.url)} className="cursor-pointer">
+                  <div onClick={() => (onStreamTrack ? onStreamTrack(item) : onSelectVideo(item.url))} className="cursor-pointer">
                     <h3
                       className="text-xs sm:text-sm font-semibold text-white line-clamp-2 leading-snug group-hover:text-indigo-300 transition-colors"
                       title={item.title}
@@ -127,6 +133,21 @@ export function SearchResults({
                     <span>{item.view_count ? `${item.view_count.toLocaleString()} views` : "YouTube"}</span>
                     
                     <div className="flex items-center gap-1.5">
+                      {onStreamTrack && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onStreamTrack(item);
+                          }}
+                          className="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-white font-medium text-[11px] flex items-center gap-1 transition-colors"
+                          title="Stream Audio Online"
+                        >
+                          <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                          <span>Play</span>
+                        </button>
+                      )}
                       {onPlayPreview && (
                         <button
                           onClick={(e) => {
@@ -134,7 +155,7 @@ export function SearchResults({
                             onPlayPreview(item);
                           }}
                           className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
-                          title="Stream / Preview"
+                          title="Preview Video (YouTube Player)"
                         >
                           <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
                             <path d="M8 5v14l11-7z" />
@@ -147,7 +168,7 @@ export function SearchResults({
                           onSelectVideo(item.url);
                         }}
                         className="p-1.5 rounded-lg bg-white/10 hover:bg-indigo-600 text-white transition-colors"
-                        title="Download this track"
+                        title="Download options"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />

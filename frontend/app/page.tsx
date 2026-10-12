@@ -16,12 +16,13 @@ import { MiniPlayerBar } from "@/components/MiniPlayerBar";
 import { PlaylistsSection, getStoredPlaylists, saveStoredPlaylists, type CustomPlaylist } from "@/components/PlaylistsSection";
 import { ThemeSelectorModal } from "@/components/ThemeSelectorModal";
 import { ThemeProvider, useTheme } from "@/context/ThemeContext";
-import { fetchInfo, searchYouTube, createDownload, deleteJob, getFileUrl, getFiles, getJobStatus } from "@/lib/api";
+import { fetchInfo, searchYouTube, createDownload, deleteJob, getFileUrl, getFiles, getJobStatus, getStreamUrl } from "@/lib/api";
 import { createJobWebSocket } from "@/lib/websocket";
 import type {
   InfoResponse,
   VideoInfoResponse,
   PlaylistInfoResponse,
+  PlaylistVideoItem,
   DownloadRequest,
   WebSocketFrame,
   SearchResultItem,
@@ -180,6 +181,113 @@ function HomePageContent() {
     setCurrentPlayingFile(previewTrack);
     setIsPlayerPlaying(true);
   }, []);
+
+  const handleStreamSearchResult = useCallback((item: SearchResultItem) => {
+    const streamTrack: FileInfo = {
+      filename: `stream_${item.video_id}.m4a`,
+      clean_title: item.title,
+      media_type: "audio",
+      thumbnail_url: item.thumbnail,
+      size_bytes: 0,
+      created_at: new Date().toISOString(),
+      modified_at: new Date().toISOString(),
+      download_url: "",
+      source_type: "stream",
+      youtube_id: item.video_id,
+      stream_url: getStreamUrl(item.video_id),
+      duration: item.duration,
+      artist: item.uploader,
+    };
+    setActivePlaylistName("YouTube Stream");
+    setCurrentPlayingFile(streamTrack);
+    setPlayerQueue((prev) => {
+      const exists = prev.some((t) => t.youtube_id === item.video_id);
+      if (exists) return prev;
+      return [...prev, streamTrack];
+    });
+    setIsPlayerPlaying(true);
+  }, []);
+
+  const handleStreamVideoInfo = useCallback((info: VideoInfoResponse) => {
+    const streamTrack: FileInfo = {
+      filename: `stream_${info.video_id}.m4a`,
+      clean_title: info.title,
+      media_type: "audio",
+      thumbnail_url: info.thumbnail,
+      size_bytes: 0,
+      created_at: new Date().toISOString(),
+      modified_at: new Date().toISOString(),
+      download_url: "",
+      source_type: "stream",
+      youtube_id: info.video_id,
+      stream_url: getStreamUrl(info.video_id),
+      duration: info.duration,
+      artist: info.uploader,
+    };
+    setActivePlaylistName("YouTube Stream");
+    setCurrentPlayingFile(streamTrack);
+    setPlayerQueue((prev) => {
+      const exists = prev.some((t) => t.youtube_id === info.video_id);
+      if (exists) return prev;
+      return [...prev, streamTrack];
+    });
+    setIsPlayerPlaying(true);
+  }, []);
+
+  const handleStreamPlayTrack = useCallback((video: PlaylistVideoItem) => {
+    const streamTrack: FileInfo = {
+      filename: `stream_${video.video_id}.m4a`,
+      clean_title: video.title,
+      media_type: "audio",
+      thumbnail_url: video.thumbnail,
+      size_bytes: 0,
+      created_at: new Date().toISOString(),
+      modified_at: new Date().toISOString(),
+      download_url: "",
+      source_type: "stream",
+      youtube_id: video.video_id,
+      stream_url: getStreamUrl(video.video_id),
+      duration: video.duration,
+    };
+    setActivePlaylistName("Playlist Stream");
+    setCurrentPlayingFile(streamTrack);
+    setPlayerQueue((prev) => {
+      const exists = prev.some((t) => t.youtube_id === video.video_id);
+      if (exists) return prev;
+      return [...prev, streamTrack];
+    });
+    setIsPlayerPlaying(true);
+  }, []);
+
+  const handleStreamPlaylist = useCallback(
+    (videos: PlaylistVideoItem[], startIndex = 0) => {
+      if (!videos || videos.length === 0) return;
+      const queue: FileInfo[] = videos.map((v) => ({
+        filename: `stream_${v.video_id}.m4a`,
+        clean_title: v.title,
+        media_type: "audio",
+        thumbnail_url: v.thumbnail,
+        size_bytes: 0,
+        created_at: new Date().toISOString(),
+        modified_at: new Date().toISOString(),
+        download_url: "",
+        source_type: "stream",
+        youtube_id: v.video_id,
+        stream_url: getStreamUrl(v.video_id),
+        duration: v.duration,
+      }));
+      const startTrack = queue[Math.max(0, Math.min(startIndex, queue.length - 1))];
+      const playlistName =
+        state.phase === "info" && state.data.type === "playlist"
+          ? (state.data as PlaylistInfoResponse).title || "Playlist Stream"
+          : "Playlist Stream";
+      setActivePlaylistName(playlistName);
+      setPlayerQueue(queue);
+      setCurrentPlayingFile(startTrack);
+      setIsPlayerPlaying(true);
+    },
+    [state],
+  );
 
   const handlePlayNext = () => {
     const queue = playerQueue.length > 0 ? playerQueue : allDownloadedFiles;
@@ -634,6 +742,7 @@ function HomePageContent() {
                     results={state.results}
                     onSelectVideo={(url) => handleFetchOrSearch(url, false)}
                     onPlayPreview={handlePlayYouTubePreview}
+                    onStreamTrack={handleStreamSearchResult}
                     onReset={handleReset}
                   />
                 )}
@@ -645,6 +754,7 @@ function HomePageContent() {
                     info={state.data as VideoInfoResponse}
                     onDownload={handleDownload}
                     onReset={handleReset}
+                    onPlayTrack={handleStreamVideoInfo}
                   />
                 )}
 
@@ -657,6 +767,8 @@ function HomePageContent() {
                     onSelectionChange={handleVideoSelection}
                     onDownload={handleDownload}
                     onReset={handleReset}
+                    onPlayPlaylist={handleStreamPlaylist}
+                    onPlayTrack={handleStreamPlayTrack}
                   />
                 )}
 

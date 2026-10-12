@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useImperativeHandle, forwardRef } from "react";
 import type { FileInfo } from "@/lib/types";
-import { getFileByNameUrl, resolveMediaUrl } from "@/lib/api";
+import { getFileByNameUrl, resolveMediaUrl, resolveTrackAudioUrl } from "@/lib/api";
 import { formatFileSize } from "@/lib/websocket";
 import { useTheme } from "../context/ThemeContext";
 
@@ -93,13 +93,87 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
       currentFile?.filename.toLowerCase().endsWith(".webm") ||
       currentFile?.filename.toLowerCase().endsWith(".mkv");
 
+    const [streamError, setStreamError] = useState<string | null>(null);
+
     // Sync playback when track changes
     useEffect(() => {
       setIsPlaying(true);
       setCurrentTime(0);
       setDuration(0);
+      setStreamError(null);
       onPlaybackStateChange?.(true);
-    }, [currentFile?.filename, onPlaybackStateChange]);
+    }, [currentFile?.filename, currentFile?.youtube_id, onPlaybackStateChange]);
+
+    const handleMediaError = useCallback(() => {
+      setStreamError("Playback failed or track unavailable. Skipping to next...");
+      setTimeout(() => {
+        setStreamError(null);
+        onPlayNext();
+      }, 1500);
+    }, [onPlayNext]);
+
+    // Media Session API for lock screen and notification controls
+    useEffect(() => {
+      if (typeof window === "undefined" || !("mediaSession" in navigator) || !currentFile) return;
+
+      const artworkSrc = currentFile.thumbnail_url ? resolveMediaUrl(currentFile.thumbnail_url) : "";
+      const artworks = artworkSrc
+        ? [
+            { src: artworkSrc, sizes: "96x96", type: "image/jpeg" },
+            { src: artworkSrc, sizes: "256x256", type: "image/jpeg" },
+            { src: artworkSrc, sizes: "512x512", type: "image/jpeg" },
+          ]
+        : [];
+
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentFile.clean_title,
+        artist: currentFile.artist || "YouTube Music",
+        album: currentFile.album || playlistName || "Online Player",
+        artwork: artworks,
+      });
+
+      const setAction = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+        try {
+          navigator.mediaSession.setActionHandler(action, handler);
+        } catch {}
+      };
+
+      setAction("play", () => {
+        const el = isVideo ? videoRef.current : audioRef.current;
+        el?.play().catch(() => {});
+        setIsPlaying(true);
+        onPlaybackStateChange?.(true);
+      });
+      setAction("pause", () => {
+        const el = isVideo ? videoRef.current : audioRef.current;
+        el?.pause();
+        setIsPlaying(false);
+        onPlaybackStateChange?.(false);
+      });
+      setAction("previoustrack", () => onPlayPrev());
+      setAction("nexttrack", () => onPlayNext());
+      setAction("seekto", (details) => {
+        const el = isVideo ? videoRef.current : audioRef.current;
+        if (el && details.seekTime !== undefined && !isNaN(details.seekTime)) {
+          el.currentTime = details.seekTime;
+          setCurrentTime(details.seekTime);
+        }
+      });
+
+      return () => {
+        setAction("play", null);
+        setAction("pause", null);
+        setAction("previoustrack", null);
+        setAction("nexttrack", null);
+        setAction("seekto", null);
+      };
+    }, [currentFile, isVideo, onPlayNext, onPlayPrev, onPlaybackStateChange, playlistName]);
+
+    useEffect(() => {
+      if (typeof window !== "undefined" && "mediaSession" in navigator) {
+        navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+      }
+    }, [isPlaying]);
 
     // Listen for YouTube iframe postMessage "ended" event for preview tracks
     useEffect(() => {
@@ -349,7 +423,7 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
       );
     }
 
-    const mediaUrl = getFileByNameUrl(currentFile.filename, true);
+    const mediaUrl = resolveTrackAudioUrl(currentFile);
     const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
     return (
@@ -429,6 +503,7 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
                     setIsPlaying(false);
                     onPlaybackStateChange?.(false);
                   }}
+                  onError={handleMediaError}
                   className="w-full h-full object-contain pointer-events-none"
                 />
               </div>
@@ -452,6 +527,7 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
                     setIsPlaying(false);
                     onPlaybackStateChange?.(false);
                   }}
+                  onError={handleMediaError}
                 />
 
                 {currentFile.thumbnail_url ? (

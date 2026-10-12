@@ -10,6 +10,7 @@ interface VideoInfoCardProps {
   info: VideoInfoResponse;
   onDownload: (request: Omit<DownloadRequest, "playlist_video_ids">) => void;
   onReset: () => void;
+  onPlayTrack?: (info: VideoInfoResponse) => void;
 }
 
 function formatDuration(seconds: number | null): string {
@@ -21,7 +22,7 @@ function formatDuration(seconds: number | null): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function VideoInfoCard({ id, info, onDownload, onReset }: VideoInfoCardProps) {
+export function VideoInfoCard({ id, info, onDownload, onReset, onPlayTrack }: VideoInfoCardProps) {
   const [mode, setMode] = useState<DownloadMode>("video");
   const [selectedQualityId, setSelectedQualityId] = useState<string>(
     info.formats[0]?.format_id ?? ""
@@ -138,24 +139,41 @@ export function VideoInfoCard({ id, info, onDownload, onReset }: VideoInfoCardPr
                 </p>
               )}
 
-              {/* Download button */}
-              <button
-                id={`${id}-download-btn`}
-                onClick={handleDownload}
-                disabled={!selectedQualityId && !selectedAudioId}
-                className="w-full py-3 sm:py-3.5 rounded-xl font-bold text-sm sm:text-base text-white
-                  bg-gradient-to-r from-red-600 via-rose-600 to-indigo-600
-                  hover:from-red-500 hover:to-indigo-500
-                  disabled:from-slate-800 disabled:to-slate-800 disabled:text-gray-500 disabled:cursor-not-allowed
-                  shadow-lg shadow-red-600/20 hover:shadow-indigo-500/25
-                  transition-all duration-200 active:scale-[0.98]
-                  flex items-center justify-center gap-2"
-              >
-                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                <span>Download {mode === "video" ? "Video (MP4)" : "Audio (MP3)"}</span>
-              </button>
+              {/* Action buttons */}
+              <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                {onPlayTrack && (
+                  <button
+                    type="button"
+                    onClick={() => onPlayTrack(info)}
+                    className="flex-1 py-3 sm:py-3.5 rounded-xl font-bold text-sm sm:text-base text-white
+                      bg-white/10 hover:bg-white/20 border border-white/15
+                      transition-all duration-200 active:scale-[0.98]
+                      flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-400" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                    <span>Stream Audio</span>
+                  </button>
+                )}
+                <button
+                  id={`${id}-download-btn`}
+                  onClick={handleDownload}
+                  disabled={!selectedQualityId && !selectedAudioId}
+                  className={`${onPlayTrack ? "flex-[1.5]" : "w-full"} py-3 sm:py-3.5 rounded-xl font-bold text-sm sm:text-base text-white
+                    bg-gradient-to-r from-red-600 via-rose-600 to-indigo-600
+                    hover:from-red-500 hover:to-indigo-500
+                    disabled:from-slate-800 disabled:to-slate-800 disabled:text-gray-500 disabled:cursor-not-allowed
+                    shadow-lg shadow-red-600/20 hover:shadow-indigo-500/25
+                    transition-all duration-200 active:scale-[0.98]
+                    flex items-center justify-center gap-2`}
+                >
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  <span>Download {mode === "video" ? "Video (MP4)" : "Audio (MP3)"}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
