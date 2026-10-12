@@ -15,6 +15,7 @@ import { RecentAndActiveSection } from "@/components/RecentAndActiveSection";
 import { MiniPlayerBar } from "@/components/MiniPlayerBar";
 import { PlaylistsSection, getStoredPlaylists, saveStoredPlaylists, type CustomPlaylist } from "@/components/PlaylistsSection";
 import { ThemeSelectorModal } from "@/components/ThemeSelectorModal";
+import { OfflineBanner } from "@/components/OfflineBanner";
 import { ThemeProvider, useTheme } from "@/context/ThemeContext";
 import { fetchInfo, searchYouTube, createDownload, deleteJob, getFileUrl, getFiles, getJobStatus, getStreamUrl } from "@/lib/api";
 import { getSetting, setSetting } from "@/lib/db";
@@ -522,6 +523,8 @@ function HomePageContent() {
         currentPlayingFile && activeTab !== "player" ? "pb-32 md:pb-6" : "pb-20 md:pb-0"
       } select-none md:select-auto`}
     >
+      <OfflineBanner />
+
       {/* Background ambient lighting equalized by theme */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div

@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -8,12 +9,31 @@ const inter = Inter({
   display: "swap",
 });
 
+export const viewport: Viewport = {
+  themeColor: "#080c14",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
+};
+
 export const metadata: Metadata = {
-  title: "YT Downloader — Local YouTube Video & Playlist Downloader",
+  title: "YT Music Online Player — Local YouTube Player & Downloader",
   description:
-    "Download YouTube videos, audio, and playlists in your preferred quality. Runs locally via yt-dlp — no tracking, no cloud, no limits.",
-  keywords: ["youtube downloader", "yt-dlp", "playlist downloader", "audio extractor"],
-  robots: "noindex, nofollow", // Local tool — don't index
+    "Stream, play, and download YouTube Music and playlists with offline caching. Runs locally via yt-dlp.",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "YT Music",
+  },
 };
 
 export default function RootLayout({
@@ -23,7 +43,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.variable} font-sans antialiased`}>{children}</body>
+      <body className={`${inter.variable} font-sans antialiased`}>
+        {children}
+        <ServiceWorkerRegister />
+      </body>
     </html>
   );
 }

@@ -67,20 +67,20 @@
 ---
 
 ### Phase 4: PWA (Manifest & Hand-Written Service Worker)
-- [ ] Create `frontend/app/manifest.ts` (Next.js metadata route)
-- [ ] Generate real PWA icon assets (192x192, 512x512, maskable) into `frontend/public/icons/`
-- [ ] Create `frontend/app/offline/page.tsx` for clean offline fallback (used only if no cached shell exists)
-- [ ] Create `frontend/public/sw.js`:
-  - [ ] Cache-first for hashed `/_next/static/*` assets
-  - [ ] Real app shell caching: cache `/` on successful navigation and serve when offline
-  - [ ] Explicitly bypass `/api/stream/*`, `/api/download/*`, `/api/files/*` Range requests, and WebSocket
-  - [ ] Never cache cross-origin opaque thumbnails in Cache Storage (handled in IDB)
-  - [ ] Versioned cache lifecycle and old cache cleanup on activate
-- [ ] Add Service Worker registration helper in `frontend/app/layout.tsx` (production only)
-- [ ] Add in-app update prompt ("New version available")
-- [ ] Implement install prompt button (`beforeinstallprompt`) and iOS "Add to Home Screen" instructions
-- [ ] Implement offline state detection and banner in `frontend/app/page.tsx`
-- [ ] Commit Phase 4 changes to git
+- [x] Create `frontend/app/manifest.ts` (Next.js metadata route)
+- [x] Generate real PWA icon assets (192x192, 512x512, maskable) into `frontend/public/icons/`
+- [x] Create `frontend/app/offline/page.tsx` for clean offline fallback (used only if no cached shell exists)
+- [x] Create `frontend/public/sw.js`:
+  - [x] Cache-first for hashed `/_next/static/*` assets
+  - [x] Real app shell caching: cache `/` on successful navigation and serve when offline
+  - [x] Explicitly bypass `/api/stream/*`, `/api/download/*`, `/api/files/*` Range requests, and WebSocket
+  - [x] Never cache cross-origin opaque thumbnails in Cache Storage (handled in IDB)
+  - [x] Versioned cache lifecycle and old cache cleanup on activate
+- [x] Add Service Worker registration helper in `frontend/app/layout.tsx` (production only)
+- [x] Add in-app update prompt ("New version available")
+- [x] Implement install prompt button (`beforeinstallprompt`) and iOS "Add to Home Screen" instructions
+- [x] Implement offline state detection and banner in `frontend/app/page.tsx`
+- [x] Commit Phase 4 changes to git
 
 ---
 
