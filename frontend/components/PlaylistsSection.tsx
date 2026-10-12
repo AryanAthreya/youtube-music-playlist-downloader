@@ -5,8 +5,16 @@ import type { FileInfo } from "@/lib/types";
 import { resolveMediaUrl } from "@/lib/api";
 import { formatFileSize } from "@/lib/websocket";
 import { useTheme } from "../context/ThemeContext";
+import {
+  getAllPlaylists,
+  saveAllPlaylists,
+  exportPlaylistsAsJson,
+  importPlaylistsFromJson,
+  type CustomPlaylist,
+  LOCAL_STORAGE_PLAYLISTS_KEY,
+} from "@/lib/db";
 
-export const LOCAL_STORAGE_PLAYLISTS_KEY = "ytdl_user_playlists_v1";
+export { LOCAL_STORAGE_PLAYLISTS_KEY, type CustomPlaylist };
 
 export function getStoredPlaylists(): CustomPlaylist[] {
   try {
@@ -22,12 +30,6 @@ export function saveStoredPlaylists(playlists: CustomPlaylist[]): void {
     localStorage.setItem(LOCAL_STORAGE_PLAYLISTS_KEY, JSON.stringify(playlists));
     window.dispatchEvent(new Event("ytdl_playlists_updated"));
   } catch {}
-}
-
-export interface CustomPlaylist {
-  id: string;
-  name: string;
-  songFilenames: string[];
 }
 
 interface PlaylistsSectionProps {
@@ -53,22 +55,17 @@ export function PlaylistsSection({
 
   // Load playlists and listen for sync updates
   useEffect(() => {
-    const load = () => {
+    let isMounted = true;
+    const load = async () => {
       try {
-        const stored = localStorage.getItem(LOCAL_STORAGE_PLAYLISTS_KEY);
-        if (stored) {
-          setCustomPlaylists(JSON.parse(stored));
-        } else {
-          const defaults: CustomPlaylist[] = [
-            { id: "pl-favorites", name: "Favorites ⭐", songFilenames: [] },
-            { id: "pl-workout", name: "Workout Energy ⚡", songFilenames: [] },
-            { id: "pl-chill", name: "Late Night Chill 🌙", songFilenames: [] },
-          ];
-          setCustomPlaylists(defaults);
-          localStorage.setItem(LOCAL_STORAGE_PLAYLISTS_KEY, JSON.stringify(defaults));
+        const playlists = await getAllPlaylists();
+        if (isMounted) {
+          setCustomPlaylists(playlists);
         }
       } catch (e) {
         console.warn("Failed to load playlists", e);
+        const fallback = getStoredPlaylists();
+        if (isMounted) setCustomPlaylists(fallback);
       }
     };
 
@@ -76,14 +73,47 @@ export function PlaylistsSection({
     window.addEventListener("ytdl_playlists_updated", load);
     window.addEventListener("storage", load);
     return () => {
+      isMounted = false;
       window.removeEventListener("ytdl_playlists_updated", load);
       window.removeEventListener("storage", load);
     };
   }, []);
 
-  const savePlaylists = (updated: CustomPlaylist[]) => {
+  const savePlaylists = async (updated: CustomPlaylist[]) => {
     setCustomPlaylists(updated);
     saveStoredPlaylists(updated);
+    await saveAllPlaylists(updated);
+  };
+
+  const handleExportPlaylists = async () => {
+    try {
+      const json = await exportPlaylistsAsJson();
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `yt_music_playlists_${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("Failed to export playlists: " + String(e));
+    }
+  };
+
+  const handleImportPlaylists = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const res = await importPlaylistsFromJson(text);
+      const updated = await getAllPlaylists();
+      setCustomPlaylists(updated);
+      alert(`Successfully imported ${res.imported} playlist(s)!`);
+    } catch (e) {
+      alert("Failed to import playlists: " + String(e));
+    } finally {
+      e.target.value = "";
+    }
   };
 
   const handleCreatePlaylist = (e: React.FormEvent) => {
@@ -429,13 +459,32 @@ export function PlaylistsSection({
           </p>
         </div>
 
-        <button
-          onClick={() => setShowNewModal(true)}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r ${config.gradient} text-white text-xs font-bold shadow-lg shadow-black/25 active:scale-95 transition-all`}
-        >
-          <span>+</span>
-          <span>New Playlist</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExportPlaylists}
+            className="text-xs text-zinc-400 hover:text-white px-3 py-2 rounded-xl glass-card hover:border-white/20 transition-all"
+            title="Export playlists to JSON file"
+          >
+            Export
+          </button>
+          <label className="text-xs text-zinc-400 hover:text-white px-3 py-2 rounded-xl glass-card hover:border-white/20 transition-all cursor-pointer">
+            Import
+            <input
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={handleImportPlaylists}
+            />
+          </label>
+          <button
+            onClick={() => setShowNewModal(true)}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r ${config.gradient} text-white text-xs font-bold shadow-lg shadow-black/25 active:scale-95 transition-all`}
+          >
+            <span>+</span>
+            <span>New Playlist</span>
+          </button>
+        </div>
       </div>
 
       {/* Grid of Playlists Cards (Desktop & Mobile, top track as cover art) */}

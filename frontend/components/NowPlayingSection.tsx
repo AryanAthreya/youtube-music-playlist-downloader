@@ -5,6 +5,7 @@ import type { FileInfo } from "@/lib/types";
 import { getFileByNameUrl, resolveMediaUrl, resolveTrackAudioUrl } from "@/lib/api";
 import { formatFileSize } from "@/lib/websocket";
 import { useTheme } from "../context/ThemeContext";
+import { addHistoryEntry } from "@/lib/db";
 
 export interface NowPlayingSectionHandle {
   togglePlayPause: () => void;
@@ -102,7 +103,10 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
       setDuration(0);
       setStreamError(null);
       onPlaybackStateChange?.(true);
-    }, [currentFile?.filename, currentFile?.youtube_id, onPlaybackStateChange]);
+      if (currentFile) {
+        addHistoryEntry(currentFile).catch(() => {});
+      }
+    }, [currentFile, onPlaybackStateChange]);
 
     const handleMediaError = useCallback(() => {
       setStreamError("Playback failed or track unavailable. Skipping to next...");

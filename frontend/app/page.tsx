@@ -17,6 +17,7 @@ import { PlaylistsSection, getStoredPlaylists, saveStoredPlaylists, type CustomP
 import { ThemeSelectorModal } from "@/components/ThemeSelectorModal";
 import { ThemeProvider, useTheme } from "@/context/ThemeContext";
 import { fetchInfo, searchYouTube, createDownload, deleteJob, getFileUrl, getFiles, getJobStatus, getStreamUrl } from "@/lib/api";
+import { getSetting, setSetting } from "@/lib/db";
 import { createJobWebSocket } from "@/lib/websocket";
 import type {
   InfoResponse,
@@ -118,6 +119,39 @@ function HomePageContent() {
   useEffect(() => {
     refreshFiles();
   }, [refreshFiles]);
+
+  // Restore last played track and queue from IndexedDB
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const lastTrack = await getSetting<FileInfo | null>("last_track", null);
+        const lastQueue = await getSetting<FileInfo[]>("last_queue", []);
+        if (isMounted && lastTrack) {
+          setCurrentPlayingFile(lastTrack);
+          if (lastQueue && lastQueue.length > 0) {
+            setPlayerQueue(lastQueue);
+          }
+        }
+      } catch {}
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Persist current track & queue changes
+  useEffect(() => {
+    if (currentPlayingFile) {
+      setSetting("last_track", currentPlayingFile).catch(() => {});
+    }
+  }, [currentPlayingFile]);
+
+  useEffect(() => {
+    if (playerQueue.length > 0) {
+      setSetting("last_queue", playerQueue).catch(() => {});
+    }
+  }, [playerQueue]);
 
   // Touch Swipe Handling for Mobile (< md)
   const touchStartX = useRef<number | null>(null);

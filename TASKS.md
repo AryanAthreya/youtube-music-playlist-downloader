@@ -49,20 +49,20 @@
 ---
 
 ### Phase 3: IndexedDB Layer
-- [ ] Add `idb` dependency to `frontend/package.json`
-- [ ] Create `frontend/lib/db.ts` with stores:
-  - [ ] `tracks`: metadata for library & stream tracks
-  - [ ] `playlists`: custom stream/mixed playlists
-  - [ ] `history`: playback history (capped entries)
-  - [ ] `settings`: volume, repeat, shuffle, last queue position
-  - [ ] `offlineTracks`: audio Blob, thumbnail Blob, metadata, savedAt, size (NEVER store object URLs)
-- [ ] Implement one-time idempotent migration from `ytdl_custom_playlists_v1` in localStorage to IndexedDB (keep backup in localStorage)
-- [ ] Update `frontend/components/PlaylistsSection.tsx` to read/write through IndexedDB repository with fallback
-- [ ] Add queue restoration and settings persistence on app launch
-- [ ] Add JSON export / import for user library and playlists
-- [ ] Add storage quota estimation (`navigator.storage.estimate()`)
-- [ ] Run frontend build & typecheck
-- [ ] Commit Phase 3 changes to git
+- [x] Add `idb` dependency to `frontend/package.json`
+- [x] Create `frontend/lib/db.ts` with stores:
+  - [x] `tracks`: metadata for library & stream tracks
+  - [x] `playlists`: custom stream/mixed playlists
+  - [x] `history`: playback history (capped entries)
+  - [x] `settings`: volume, repeat, shuffle, last queue position
+  - [x] `offlineTracks`: audio Blob, thumbnail Blob, metadata, savedAt, size (NEVER store object URLs)
+- [x] Implement one-time idempotent migration from `ytdl_custom_playlists_v1` in localStorage to IndexedDB (keep backup in localStorage)
+- [x] Update `frontend/components/PlaylistsSection.tsx` to read/write through IndexedDB repository with fallback
+- [x] Add queue restoration and settings persistence on app launch
+- [x] Add JSON export / import for user library and playlists
+- [x] Add storage quota estimation (`navigator.storage.estimate()`)
+- [x] Run frontend build & typecheck
+- [x] Commit Phase 3 changes to git
 
 ---
 
