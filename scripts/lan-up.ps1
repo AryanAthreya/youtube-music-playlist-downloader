@@ -74,14 +74,15 @@ $maxTries = 30
 for ($i = 0; $i -lt $maxTries; $i++) {
     try {
         $resp = Invoke-RestMethod -Uri "http://localhost:8000/api/health" -TimeoutSec 2 -ErrorAction Stop
-        if ($resp.status -eq "ok" -or $resp.fastapi -eq "ok") {
+        if ($resp.status -in @("healthy", "ok") -or $resp.fastapi -eq "ok") {
             $healthy = $true
             break
         }
     } catch {
-        Start-Sleep -Seconds 1
-        Write-Host "." -NoNewline
+        # Wait and retry while container initializes
     }
+    Start-Sleep -Seconds 1
+    Write-Host "." -NoNewline
 }
 Write-Host ""
 
