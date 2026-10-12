@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     # ── CORS ──────────────────────────────────────────────────────────────
     cors_origins: str = "http://localhost:3000"
 
+    # ── Stream limits & performance ───────────────────────────────────────
+    max_concurrent_streams: int = 3
+    temp_cleanup_hours: int = 24  # Cleanup temporary orphaned download files older than N hours
+
+    # ── Authentication / Bot bypass (optional cookies) ────────────────────
+    ytdlp_cookies_file: Path | None = None
+
     # ── yt-dlp network timeouts (seconds) ─────────────────────────────────
     ytdlp_socket_timeout: int = 30
     ytdlp_retries: int = 3

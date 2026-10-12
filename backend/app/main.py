@@ -18,10 +18,10 @@ import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import download, files, health, info, websocket
+from app.api import download, files, health, info, stream, websocket
 from app.config import get_settings
 from app.errors.exceptions import register_exception_handlers
-from app.services import file_manager, job_manager
+from app.services import file_manager, job_manager, stream_service
 from app.services import yt_dlp_client
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
@@ -73,6 +73,7 @@ def create_app() -> FastAPI:
     app.include_router(info.router)
     app.include_router(download.router)
     app.include_router(files.router)
+    app.include_router(stream.router)
     app.include_router(websocket.router)
 
     # ── Lifecycle events ──────────────────────────────────────────────────
@@ -114,8 +115,13 @@ def create_app() -> FastAPI:
         logger.info("  Retention:          %dh", settings.download_retention_hours)
         logger.info("=" * 60)
 
-        # Step 4: Start retention sweep
+        # Step 4: Start retention sweep & clean stale temp files
         await file_manager.start_retention_sweep_task()
+        try:
+            stream_service.cleanup_stale_temp_files()
+        except Exception as exc:
+            logger.warning("Failed to clean stale temp files: %s", exc)
+
         logger.info("Startup complete.")
 
     @app.on_event("shutdown")

@@ -55,7 +55,10 @@ def _build_base_opts(
     Returns:
         dict: Base yt-dlp options dictionary.
     """
-    return {
+    from app.config import get_settings
+    settings = get_settings()
+
+    opts = {
         # Timeouts and retries
         "socket_timeout": socket_timeout,
         "retries": retries,
@@ -71,6 +74,11 @@ def _build_base_opts(
         # Continue on download errors (e.g. hidden/unavailable videos in playlists)
         "ignoreerrors": True,
     }
+
+    if settings.ytdlp_cookies_file and Path(settings.ytdlp_cookies_file).is_file():
+        opts["cookiefile"] = str(settings.ytdlp_cookies_file)
+
+    return opts
 
 
 class _YtDlpLogger:

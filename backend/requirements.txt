@@ -11,10 +11,11 @@
 yt-dlp==2026.8.19
 yt-dlp-ejs==0.8.0
 
-# ── Web framework ─────────────────────────────────────────────────────────
+# ── Web framework & HTTP client ──────────────────────────────────────────
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 websockets==13.1
+httpx==0.28.1
 
 # ── Validation & config ───────────────────────────────────────────────────
 pydantic==2.9.2
