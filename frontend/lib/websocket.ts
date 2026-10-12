@@ -10,8 +10,16 @@
 import type { JobResponse, WebSocketFrame } from "./types";
 import { getJobStatus } from "./api";
 
-const WS_BASE =
-  process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000";
+function getWsBase(): string {
+  if (process.env.NEXT_PUBLIC_WS_URL) {
+    return process.env.NEXT_PUBLIC_WS_URL;
+  }
+  if (typeof window !== "undefined") {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${window.location.host}`;
+  }
+  return "ws://localhost:8000";
+}
 
 // Maximum reconnect attempts before switching to polling
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -57,7 +65,7 @@ export function createJobWebSocket(
   function connect() {
     if (closed) return;
 
-    const url = `${WS_BASE}/api/download/${jobId}/ws`;
+    const url = `${getWsBase()}/api/download/${jobId}/ws`;
     ws = new WebSocket(url);
 
     ws.onopen = () => {

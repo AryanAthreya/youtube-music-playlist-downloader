@@ -1,0 +1,57 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Caddyfile — Production Reverse Proxy for YT Music Online Player
+#
+# Configured for:
+# - Automatic HTTPS via Let's Encrypt (HTTP challenge for DuckDNS)
+# - HTTP/2 and HTTP/3 support
+# - WebSocket proxying for real-time download progress
+# - Streaming audio proxying with unbuffered chunk flushing
+# - Named matcher for optional HTTP basic auth protecting private instances
+# ─────────────────────────────────────────────────────────────────────────────
+
+{$DOMAIN:localhost} {
+    # Use HTTP-01 challenge for standard domains / DuckDNS without DNS provider plugins
+    tls {
+        issuer acme {
+            disable_tls_alpn_challenge
+        }
+    }
+
+    # Compression for static and JSON responses
+    encode gzip zstd
+
+    # Named matcher: protects all paths EXCEPT public PWA assets
+    @protected {
+        not path /manifest.webmanifest /sw.js /offline /icons/* /_next/static/*
+    }
+
+    # Optional Basic Auth: uncomment and set AUTH_USER + AUTH_HASH in .env to protect
+    # basic_auth @protected {
+    #     {$AUTH_USER:admin} {$AUTH_HASH}
+    # }
+
+    # API routes & streaming proxy to FastAPI backend
+    handle /api/* {
+        reverse_proxy backend:8000 {
+            flush_interval -1
+        }
+    }
+
+    # WebSocket connections for download progress
+    handle /ws/* {
+        reverse_proxy backend:8000
+    }
+
+    # Frontend Next.js PWA app
+    handle {
+        reverse_proxy frontend:3000
+    }
+
+    # Security headers
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    }
+}

@@ -101,24 +101,24 @@
 ---
 
 ### Phase 6: Production Deployment on ~2 GB VM
-- [ ] Update `frontend/Dockerfile`:
-  - [ ] Add `ARG NEXT_PUBLIC_API_URL="http://localhost:8000"` and `ARG NEXT_PUBLIC_WS_URL="ws://localhost:8000"` with dev defaults
-- [ ] In `frontend/lib/websocket.ts`, derive `wss://${window.location.host}/api/...` when `NEXT_PUBLIC_WS_URL` is empty
-- [ ] Update `backend/Dockerfile`:
-  - [ ] Make Deno download architecture-aware (`x86_64` vs `aarch64`)
-- [ ] Create `docker-compose.prod.yml`:
-  - [ ] Pass empty `NEXT_PUBLIC_*` build args for same-origin relative URLs
-  - [ ] Memory limits (`mem_limit`): backend ~700m, frontend ~350m, caddy ~64m
-  - [ ] Internal ports only (no host port publication for backend/frontend)
-  - [ ] Restart policies, volume bindings, and healthchecks
-- [ ] Create `Caddyfile`:
-  - [ ] Automatic HTTPS configuration via HTTP challenge for DuckDNS
-  - [ ] Proxy `/api/*` directly to backend with WebSocket support and `flush_interval -1`
-  - [ ] Proxy remaining routes to frontend
-  - [ ] Basic auth named matcher `@protected { not path /manifest.webmanifest /sw.js /icons/* /offline }` and `basic_auth @protected { ... }`
-- [ ] Create `scripts/auto-update-ytdlp.sh` (safe test, bump, rebuild, rollback)
-- [ ] Create `DEPLOYMENT.md` with 2 GB swap setup, DuckDNS guide, cookie export instructions, and troubleshooting
-- [ ] Commit Phase 6 changes to git
+- [x] Update `frontend/Dockerfile`:
+  - [x] Add `ARG NEXT_PUBLIC_API_URL="http://localhost:8000"` and `ARG NEXT_PUBLIC_WS_URL="ws://localhost:8000"` with dev defaults
+- [x] In `frontend/lib/websocket.ts`, derive `wss://${window.location.host}/api/...` when `NEXT_PUBLIC_WS_URL` is empty
+- [x] Update `backend/Dockerfile`:
+  - [x] Make Deno download architecture-aware (`x86_64` vs `aarch64`)
+- [x] Create `docker-compose.prod.yml`:
+  - [x] Pass empty `NEXT_PUBLIC_*` build args for same-origin relative URLs
+  - [x] Memory limits (`mem_limit`): backend ~700m, frontend ~350m, caddy ~64m
+  - [x] Internal ports only (no host port publication for backend/frontend)
+  - [x] Restart policies, volume bindings, and healthchecks
+- [x] Create `Caddyfile`:
+  - [x] Automatic HTTPS configuration via HTTP challenge for DuckDNS
+  - [x] Proxy `/api/*` directly to backend with WebSocket support and `flush_interval -1`
+  - [x] Proxy remaining routes to frontend
+  - [x] Basic auth named matcher `@protected { not path /manifest.webmanifest /sw.js /icons/* /offline }` and `basic_auth @protected { ... }`
+- [x] Create `scripts/auto-update-ytdlp.sh` (safe test, bump, rebuild, rollback)
+- [x] Create `DEPLOYMENT.md` with 2 GB swap setup, DuckDNS guide, cookie export instructions, and troubleshooting
+- [x] Commit Phase 6 changes to git
 
 ---
 

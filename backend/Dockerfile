@@ -25,7 +25,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # (that always fetches latest). We pin by specifying the exact tag.
 ENV DENO_VERSION=v2.9.6
 ENV DENO_INSTALL=/usr/local
-RUN curl -fsSL "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" \
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then \
+        DENO_ARCH="x86_64-unknown-linux-gnu"; \
+    elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
+        DENO_ARCH="aarch64-unknown-linux-gnu"; \
+    else \
+        echo "Unsupported architecture: $ARCH" && exit 1; \
+    fi && \
+    curl -fsSL "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-${DENO_ARCH}.zip" \
         -o /tmp/deno.zip \
     && unzip /tmp/deno.zip -d /tmp/deno-bin \
     && mv /tmp/deno-bin/deno /usr/local/bin/deno \

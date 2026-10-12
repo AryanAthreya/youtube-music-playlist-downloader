@@ -10,6 +10,12 @@ RUN npm install --frozen-lockfile=false
 # Copy source
 COPY . .
 
+# Build args with localhost defaults
+ARG NEXT_PUBLIC_API_URL="http://localhost:8000"
+ARG NEXT_PUBLIC_WS_URL="ws://localhost:8000"
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
+
 # Build the Next.js app
 RUN npm run build
 
