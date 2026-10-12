@@ -10,9 +10,10 @@ RUN npm install --frozen-lockfile=false
 # Copy source
 COPY . .
 
-# Build args with localhost defaults
-ARG NEXT_PUBLIC_API_URL="http://localhost:8000"
-ARG NEXT_PUBLIC_WS_URL="ws://localhost:8000"
+# Build args: unset in dev for runtime window.location derivation (LAN/phone support)
+# In production (docker-compose.prod.yml), pass "" for same-origin relative URLs
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_WS_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 

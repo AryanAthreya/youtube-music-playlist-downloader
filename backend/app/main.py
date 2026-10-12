@@ -57,13 +57,18 @@ def create_app() -> FastAPI:
     )
 
     # ── CORS ──────────────────────────────────────────────────────────────
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins_list,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-        allow_headers=["*"],
-    )
+    cors_kwargs = {
+        "allow_origins": settings.cors_origins_list,
+        "allow_credentials": True,
+        "allow_methods": ["GET", "POST", "DELETE", "OPTIONS"],
+        "allow_headers": ["*"],
+    }
+    if settings.cors_allow_lan:
+        cors_kwargs["allow_origin_regex"] = (
+            r"^https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:3000)?$"
+        )
+
+    app.add_middleware(CORSMiddleware, **cors_kwargs)
 
     # ── Exception handlers ────────────────────────────────────────────────
     register_exception_handlers(app)

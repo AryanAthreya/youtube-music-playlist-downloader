@@ -48,6 +48,34 @@ docker compose up --build -d
 
 ---
 
+## Test on your Phone (Same Wi-Fi / LAN)
+
+You can preview and test the web app directly from your smartphone or tablet on the same Wi-Fi network with **zero rebuilds** per IP address:
+
+```powershell
+# 1. Run the automated LAN helper in PowerShell
+.\scripts\lan-up.ps1
+```
+
+The script automatically detects your primary LAN IPv4 address (e.g. `192.168.1.X`), enables `CORS_ALLOW_LAN=true`, checks Windows Firewall, starts the containers, and outputs your mobile testing URL (`http://<PC-LAN-IP>:3000`).
+
+To stop the containers:
+```powershell
+.\scripts\lan-down.ps1
+```
+
+> ⚠️ **HTTPS Limitation over Plain HTTP**:
+> Web standards restrict Service Worker registration, PWA installation, and offline caching exclusively to secure contexts (`https://` or `localhost`). Over plain `http://<IP>:3000`, you can fully test search, responsive layouts, audio streaming, playback seeking, custom playlists, and downloads. PWA home-screen installation and offline caching require `localhost` or the production HTTPS setup with Caddy.
+
+> 🔍 **Common LAN Connection Issues**:
+> - **Windows Firewall**: If your phone times out, open ports 3000 and 8000 in an Administrator PowerShell:
+>   `New-NetFirewallRule -DisplayName "YTDL Player (LAN)" -Direction Inbound -LocalPort 3000,8000 -Protocol TCP -Action Allow`
+> - **Wi-Fi AP / Client Isolation**: Some router "Guest" networks prevent wireless devices from reaching other LAN devices. Use your main Wi-Fi band.
+> - **Network Profile**: Ensure Windows Settings has your connection set to **Private network** rather than Public.
+> - **Active VPN**: Disable any VPNs on your phone or PC that intercept local subnets.
+
+---
+
 ## Production Deployment (~2 GB RAM Linux VM)
 
 For hosting on a cloud VM (e.g., Oracle Cloud Free Tier, Hetzner, DigitalOcean) with automatic HTTPS via DuckDNS and Caddy:

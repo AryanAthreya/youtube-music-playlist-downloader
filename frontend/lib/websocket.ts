@@ -10,14 +10,36 @@
 import type { JobResponse, WebSocketFrame } from "./types";
 import { getJobStatus } from "./api";
 
+/**
+ * Three-way WebSocket URL derivation:
+ * 1. Undefined: dev / LAN fallback.
+ *    - In browser: derives `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:8000` (enables phone/LAN testing with zero rebuilds).
+ *    - On server / SSR: falls back to `ws://localhost:8000`.
+ * 2. Explicit non-empty string: used as-is (e.g. custom remote WS endpoint).
+ * 3. Explicit empty string (""): same-origin relative WS `${proto}://${location.host}` for production Caddy reverse proxy setup.
+ *
+ * On localhost, the result is identical to ws://localhost:8000.
+ */
 function getWsBase(): string {
-  if (process.env.NEXT_PUBLIC_WS_URL) {
-    return process.env.NEXT_PUBLIC_WS_URL;
+  const envUrl = process.env.NEXT_PUBLIC_WS_URL;
+  if (envUrl !== undefined) {
+    if (envUrl !== "") {
+      return envUrl;
+    }
+    // Explicit empty string (""): same-origin behind reverse proxy
+    if (typeof window !== "undefined" && window.location) {
+      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+      return `${proto}//${window.location.host}`;
+    }
+    return "ws://localhost:8000";
   }
-  if (typeof window !== "undefined") {
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.host}`;
+
+  // Undefined: dev / LAN fallback
+  if (typeof window !== "undefined" && window.location) {
+    const proto = window.location.protocol === "https:" ? "wss" : "ws:";
+    return `${proto}//${window.location.hostname}:8000`;
   }
+
   return "ws://localhost:8000";
 }
 

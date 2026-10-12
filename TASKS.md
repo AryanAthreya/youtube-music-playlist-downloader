@@ -134,8 +134,23 @@
   - [x] Playlist streaming (next, previous, repeat, shuffle)
   - [x] Offline track saving and playback with network disconnected
   - [x] PWA installation and offline shell load
-- [x] Update `README.md` (correct test count to 85, new features, architecture, deployment)
+- [x] Update `README.md` (correct test count to 91, new features, architecture, deployment)
 - [x] Final audit summary and merge preparation
+
+---
+
+### LAN / Mobile Testing Support (Optional Chore)
+- [x] Dynamic runtime backend URL derivation in `frontend/lib/api.ts` and `frontend/lib/websocket.ts`
+  - [x] Undefined fallback in browser: derives `${location.protocol}//${location.hostname}:8000`
+  - [x] Server / SSR fallback: `http://localhost:8000` / `ws://localhost:8000`
+  - [x] Preserved 3-way behavior: undefined (LAN derivation), non-empty string (custom), empty string `""` (prod same-origin)
+- [x] Backend CORS for private LAN origins:
+  - [x] Added `CORS_ALLOW_LAN` (default `false`) in `config.py`
+  - [x] Added `allow_origin_regex` for private IP ranges on port 3000 in `main.py`
+  - [x] Expose `CORS_ALLOW_LAN=${CORS_ALLOW_LAN:-false}` in `docker-compose.yml` and `.env.example`
+- [x] Created PowerShell helper `scripts/lan-up.ps1` (detects LAN IP, checks firewall, starts stack, tests health)
+- [x] Created `scripts/lan-down.ps1` (stops stack)
+- [x] Documented LAN phone testing, HTTPS limitations, and troubleshooting in `README.md`
 
 ---
 

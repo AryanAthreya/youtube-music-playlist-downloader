@@ -17,8 +17,26 @@ import type {
   SearchResponse,
 } from "./types";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+/**
+ * Three-way API URL derivation:
+ * 1. Undefined: dev / LAN fallback.
+ *    - In browser: derives `${location.protocol}//${location.hostname}:8000` (enables phone/LAN testing with zero rebuilds).
+ *    - On server / SSR: falls back to `http://localhost:8000`.
+ * 2. Explicit non-empty string: used as-is (e.g. custom remote backend).
+ * 3. Explicit empty string (""): same-origin relative URLs (/api/...) for production Caddy reverse proxy setup.
+ *
+ * On localhost, the result is identical to http://localhost:8000.
+ */
+export function getApiBase(): string {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (envUrl !== undefined) {
+    return envUrl; // Could be "" (same-origin) or explicit custom URL
+  }
+  if (typeof window !== "undefined" && window.location) {
+    return `${window.location.protocol}//${window.location.hostname}:8000`;
+  }
+  return "http://localhost:8000";
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -38,7 +56,7 @@ async function apiFetch<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
-  const url = `${API_BASE}${path}`;
+  const url = `${getApiBase()}${path}`;
   let response: Response;
 
   try {
@@ -156,7 +174,7 @@ export async function deleteJob(jobId: string): Promise<void> {
  * @returns Full URL to the file (including API base).
  */
 export function getFileUrl(jobId: string, stream: boolean = false): string {
-  const base = `${API_BASE}/api/download/${jobId}/file`;
+  const base = `${getApiBase()}/api/download/${jobId}/file`;
   return stream ? `${base}?stream=true` : base;
 }
 
@@ -182,7 +200,7 @@ export async function getFiles(): Promise<FilesListResponse> {
  * @returns Full URL to the file.
  */
 export function getFileByNameUrl(filename: string, stream: boolean = false): string {
-  const base = `${API_BASE}/api/files/${encodeURIComponent(filename)}`;
+  const base = `${getApiBase()}/api/files/${encodeURIComponent(filename)}`;
   return stream ? `${base}?stream=true` : base;
 }
 
@@ -205,14 +223,14 @@ import { getCurrentStreamingQuality, getEffectiveStreamingQuality } from "./db";
 export function getStreamUrl(videoId: string, quality?: string): string {
   const q = quality || getEffectiveStreamingQuality(getCurrentStreamingQuality());
   const qParam = q ? `?q=${encodeURIComponent(q)}` : "";
-  return `${API_BASE}/api/stream/${encodeURIComponent(videoId)}${qParam}`;
+  return `${getApiBase()}/api/stream/${encodeURIComponent(videoId)}${qParam}`;
 }
 
 /**
  * Get proxied thumbnail URL for a YouTube video ID.
  */
 export function getThumbProxyUrl(videoId: string): string {
-  return `${API_BASE}/api/thumb?id=${encodeURIComponent(videoId)}`;
+  return `${getApiBase()}/api/thumb?id=${encodeURIComponent(videoId)}`;
 }
 
 /**
@@ -239,7 +257,7 @@ export function resolveMediaUrl(url: string | null | undefined): string {
   if (!url) return "";
   if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("blob:")) return url;
   const clean = url.startsWith("/") ? url : `/${url}`;
-  return `${API_BASE}${clean}`;
+  return `${getApiBase()}${clean}`;
 }
 
 // ── Health ────────────────────────────────────────────────────────────────────

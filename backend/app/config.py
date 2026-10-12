@@ -40,6 +40,7 @@ class Settings(BaseSettings):
 
     # ── CORS ──────────────────────────────────────────────────────────────
     cors_origins: str = "http://localhost:3000"
+    cors_allow_lan: bool = False  # DEV ONLY: allow private LAN origins on port 3000
 
     # ── Stream limits & performance ───────────────────────────────────────
     max_concurrent_streams: int = 3

@@ -12,6 +12,7 @@ services:
       - MIN_DISK_HEADROOM_MB=${MIN_DISK_HEADROOM_MB:-1024}
       - DOWNLOADS_BASE_PATH=/app/downloads
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+      - CORS_ALLOW_LAN=${CORS_ALLOW_LAN:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ./downloads:/app/downloads
@@ -34,8 +35,8 @@ services:
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-      - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-}
+      - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL:-}
     depends_on:
       backend:
         condition: service_healthy

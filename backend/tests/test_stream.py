@@ -477,3 +477,47 @@ class TestStreamEndpoints:
                 assert resp.status_code == 200
                 assert resp.headers["Content-Type"] == "image/jpeg"
                 assert resp.content == fake_jpeg
+
+
+# ── CORS LAN Origins ──────────────────────────────────────────────────────────
+
+
+class TestCorsLanOrigins:
+
+    @pytest.mark.asyncio
+    async def test_cors_lan_allows_private_ips_and_rejects_evil(self):
+        from fastapi.middleware.cors import CORSMiddleware
+        lan_regex = r"^https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:3000)?$"
+        test_app = FastAPI()
+        test_app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["http://localhost:3000"],
+            allow_origin_regex=lan_regex,
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_headers=["*"],
+        )
+
+        @test_app.get("/test")
+        def endpoint():
+            return {"status": "ok"}
+
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=test_app), base_url="http://test") as client:
+            # 1. Localhost:3000 allowed
+            resp_local = await client.options("/test", headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "GET"})
+            assert resp_local.headers.get("access-control-allow-origin") == "http://localhost:3000"
+            assert resp_local.headers.get("access-control-allow-credentials") == "true"
+
+            # 2. 192.168.x.x:3000 allowed
+            resp_lan1 = await client.options("/test", headers={"Origin": "http://192.168.1.100:3000", "Access-Control-Request-Method": "GET"})
+            assert resp_lan1.headers.get("access-control-allow-origin") == "http://192.168.1.100:3000"
+            assert resp_lan1.headers.get("access-control-allow-credentials") == "true"
+
+            # 3. 10.x.x.x:3000 allowed
+            resp_lan2 = await client.options("/test", headers={"Origin": "http://10.0.0.5:3000", "Access-Control-Request-Method": "GET"})
+            assert resp_lan2.headers.get("access-control-allow-origin") == "http://10.0.0.5:3000"
+
+            # 4. evil.com rejected
+            resp_evil = await client.options("/test", headers={"Origin": "http://evil.com:3000", "Access-Control-Request-Method": "GET"})
+            assert "access-control-allow-origin" not in resp_evil.headers
+
