@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
-import type { FileInfo } from "@/lib/types";
-import { resolveMediaUrl } from "@/lib/api";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import type { FileInfo, PlaylistInfoResponse } from "@/lib/types";
+import { resolveMediaUrl, fetchInfo } from "@/lib/api";
 import { formatFileSize } from "@/lib/websocket";
 import { useTheme } from "../context/ThemeContext";
 import {
@@ -10,6 +10,14 @@ import {
   saveAllPlaylists,
   exportPlaylistsAsJson,
   importPlaylistsFromJson,
+  getRecentlyPlayedTracks,
+  getMostPlayedTracks,
+  getLikedTracks,
+  getTracks,
+  trackRecordToFileInfo,
+  importYouTubePlaylist,
+  getAllOfflineTracks,
+  type PlaylistRecord,
   type CustomPlaylist,
   LOCAL_STORAGE_PLAYLISTS_KEY,
 } from "@/lib/db";
@@ -48,38 +56,96 @@ export function PlaylistsSection({
   currentPlayingFile,
 }: PlaylistsSectionProps) {
   const { config } = useTheme();
-  const [customPlaylists, setCustomPlaylists] = useState<CustomPlaylist[]>([]);
+  const [customPlaylists, setCustomPlaylists] = useState<PlaylistRecord[]>([]);
   const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
+  const [isRefreshingYt, setIsRefreshingYt] = useState(false);
+
+  // Smart Playlists states
+  const [recentlyPlayed, setRecentlyPlayed] = useState<FileInfo[]>([]);
+  const [mostPlayed, setMostPlayed] = useState<FileInfo[]>([]);
+  const [likedTracks, setLikedTracks] = useState<FileInfo[]>([]);
+  const [offlineTracks, setOfflineTracks] = useState<FileInfo[]>([]);
+  const [dbTracksMap, setDbTracksMap] = useState<Map<string, FileInfo>>(new Map());
+
+  // Load Smart Playlists data
+  const loadSmartPlaylists = useCallback(async () => {
+    try {
+      const [recentRecords, mostPlayedRecords, likedRecords, offlineRecords] = await Promise.all([
+        getRecentlyPlayedTracks(50),
+        getMostPlayedTracks(50),
+        getLikedTracks(),
+        getAllOfflineTracks(),
+      ]);
+
+      setRecentlyPlayed(recentRecords.map(trackRecordToFileInfo));
+      setMostPlayed(mostPlayedRecords.map((m) => trackRecordToFileInfo(m.track)));
+      setLikedTracks(likedRecords.map(trackRecordToFileInfo));
+      setOfflineTracks(offlineRecords.map((o) => o.metadata));
+    } catch (err) {
+      console.warn("Failed to load smart playlists:", err);
+    }
+  }, []);
+
+  // Load Custom Playlists & resolve tracks
+  const loadCustomPlaylists = useCallback(async () => {
+    try {
+      const playlists = await getAllPlaylists();
+      setCustomPlaylists(playlists);
+
+      // Collect track IDs from all playlists to resolve in DB
+      const allIds = new Set<string>();
+      for (const pl of playlists) {
+        if (pl.trackIds) {
+          for (const tid of pl.trackIds) allIds.add(tid);
+        }
+        if (pl.songFilenames) {
+          for (const fn of pl.songFilenames) {
+            allIds.add(fn);
+          }
+        }
+      }
+
+      if (allIds.size > 0) {
+        const records = await getTracks(Array.from(allIds));
+        const map = new Map<string, FileInfo>();
+        for (const rec of records) {
+          map.set(rec.id, trackRecordToFileInfo(rec));
+        }
+        setDbTracksMap(map);
+      }
+    } catch (e) {
+      console.warn("Failed to load playlists", e);
+      const fallback = getStoredPlaylists();
+      setCustomPlaylists(fallback);
+    }
+  }, []);
 
   // Load playlists and listen for sync updates
   useEffect(() => {
-    let isMounted = true;
-    const load = async () => {
-      try {
-        const playlists = await getAllPlaylists();
-        if (isMounted) {
-          setCustomPlaylists(playlists);
-        }
-      } catch (e) {
-        console.warn("Failed to load playlists", e);
-        const fallback = getStoredPlaylists();
-        if (isMounted) setCustomPlaylists(fallback);
-      }
-    };
+    loadCustomPlaylists();
+    loadSmartPlaylists();
 
-    load();
-    window.addEventListener("ytdl_playlists_updated", load);
-    window.addEventListener("storage", load);
+    const handlePlaylistsUpdate = () => loadCustomPlaylists();
+    const handleSmartUpdate = () => loadSmartPlaylists();
+
+    window.addEventListener("ytdl_playlists_updated", handlePlaylistsUpdate);
+    window.addEventListener("ytdl_history_updated", handleSmartUpdate);
+    window.addEventListener("ytdl_liked_changed", handleSmartUpdate);
+    window.addEventListener("ytdl_offline_updated", handleSmartUpdate);
+    window.addEventListener("storage", handlePlaylistsUpdate);
+
     return () => {
-      isMounted = false;
-      window.removeEventListener("ytdl_playlists_updated", load);
-      window.removeEventListener("storage", load);
+      window.removeEventListener("ytdl_playlists_updated", handlePlaylistsUpdate);
+      window.removeEventListener("ytdl_history_updated", handleSmartUpdate);
+      window.removeEventListener("ytdl_liked_changed", handleSmartUpdate);
+      window.removeEventListener("ytdl_offline_updated", handleSmartUpdate);
+      window.removeEventListener("storage", handlePlaylistsUpdate);
     };
-  }, []);
+  }, [loadCustomPlaylists, loadSmartPlaylists]);
 
-  const savePlaylists = async (updated: CustomPlaylist[]) => {
+  const savePlaylists = async (updated: PlaylistRecord[]) => {
     setCustomPlaylists(updated);
     saveStoredPlaylists(updated);
     await saveAllPlaylists(updated);
@@ -106,8 +172,7 @@ export function PlaylistsSection({
     try {
       const text = await file.text();
       const res = await importPlaylistsFromJson(text);
-      const updated = await getAllPlaylists();
-      setCustomPlaylists(updated);
+      await loadCustomPlaylists();
       alert(`Successfully imported ${res.imported} playlist(s)!`);
     } catch (e) {
       alert("Failed to import playlists: " + String(e));
@@ -120,10 +185,14 @@ export function PlaylistsSection({
     e.preventDefault();
     const trimmed = newPlaylistName.trim();
     if (!trimmed) return;
-    const newPl: CustomPlaylist = {
+    const newPl: PlaylistRecord = {
       id: `pl-${Date.now()}`,
       name: trimmed,
+      kind: "user",
+      trackIds: [],
       songFilenames: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     };
     const updated = [...customPlaylists, newPl];
     savePlaylists(updated);
@@ -141,18 +210,84 @@ export function PlaylistsSection({
     }
   };
 
-  const handleRemoveTrack = (playlistId: string, filename: string) => {
+  const handleRemoveTrack = (playlistId: string, filenameOrId: string) => {
     const updated = customPlaylists.map((pl) => {
       if (pl.id !== playlistId) return pl;
       return {
         ...pl,
-        songFilenames: pl.songFilenames.filter((f) => f !== filename),
+        songFilenames: pl.songFilenames.filter((f) => f !== filenameOrId),
+        trackIds: pl.trackIds?.filter((id) => id !== filenameOrId),
+        updatedAt: Date.now(),
       };
     });
     savePlaylists(updated);
   };
 
-  // Compile all system + custom playlists
+  const handleRefreshYouTubePlaylist = async (playlist: PlaylistRecord) => {
+    if (!playlist.sourceUrl) {
+      alert("This playlist does not have a source YouTube URL.");
+      return;
+    }
+    setIsRefreshingYt(true);
+    try {
+      const info = await fetchInfo(playlist.sourceUrl);
+      if (info.type === "playlist") {
+        await importYouTubePlaylist(info as PlaylistInfoResponse, playlist.sourceUrl);
+        await loadCustomPlaylists();
+        alert(`Playlist "${playlist.name}" refreshed with ${info.videos.length} tracks.`);
+      } else {
+        alert("Source URL is not a playlist.");
+      }
+    } catch (err) {
+      alert("Failed to refresh playlist: " + String(err));
+    } finally {
+      setIsRefreshingYt(false);
+    }
+  };
+
+  // Compile Smart Playlists
+  const smartPlaylists = useMemo(() => {
+    return [
+      {
+        id: "smart-recent",
+        name: "Recently Played",
+        tracks: recentlyPlayed,
+        icon: "🕒",
+        isSystem: true,
+        isSmart: true,
+        description: "Tracks listened for at least 30 seconds",
+      },
+      {
+        id: "smart-liked",
+        name: "Liked Songs",
+        tracks: likedTracks,
+        icon: "❤️",
+        isSystem: true,
+        isSmart: true,
+        description: "All tracks you have marked with heart",
+      },
+      {
+        id: "smart-most-played",
+        name: "Most Played",
+        tracks: mostPlayed,
+        icon: "🔥",
+        isSystem: true,
+        isSmart: true,
+        description: "Your most frequently played tracks",
+      },
+      {
+        id: "smart-offline",
+        name: "Saved Offline",
+        tracks: offlineTracks,
+        icon: "💾",
+        isSystem: true,
+        isSmart: true,
+        description: "Tracks cached in browser IndexedDB storage",
+      },
+    ];
+  }, [recentlyPlayed, likedTracks, mostPlayed, offlineTracks]);
+
+  // Compile system downloaded playlists
   const systemPlaylists = useMemo(() => {
     const musicOnly = allFiles.filter(
       (f) =>
@@ -175,6 +310,7 @@ export function PlaylistsSection({
         tracks: allFiles,
         icon: "📥",
         isSystem: true,
+        isSmart: false,
       },
       {
         id: "sys-music",
@@ -182,6 +318,7 @@ export function PlaylistsSection({
         tracks: musicOnly,
         icon: "🎵",
         isSystem: true,
+        isSmart: false,
       },
       {
         id: "sys-videos",
@@ -189,6 +326,7 @@ export function PlaylistsSection({
         tracks: videoOnly,
         icon: "🎬",
         isSystem: true,
+        isSmart: false,
       },
     ];
   }, [allFiles]);
@@ -196,18 +334,23 @@ export function PlaylistsSection({
   const customPlaylistsWithTracks = useMemo(() => {
     const fileMap = new Map(allFiles.map((f) => [f.filename, f]));
     return customPlaylists.map((pl) => {
-      const tracks = pl.songFilenames
-        .map((fn) => fileMap.get(fn))
+      const idsOrFilenames = pl.trackIds && pl.trackIds.length > 0 ? pl.trackIds : pl.songFilenames;
+      const tracks = idsOrFilenames
+        .map((idOrFn) => fileMap.get(idOrFn) || dbTracksMap.get(idOrFn))
         .filter((f): f is FileInfo => f !== undefined);
       return {
         id: pl.id,
         name: pl.name,
         tracks,
-        icon: "🎧",
+        icon: pl.kind === "youtube-import" ? "▶" : "🎧",
         isSystem: false,
+        isSmart: false,
+        kind: pl.kind,
+        sourceUrl: pl.sourceUrl,
+        rawRecord: pl,
       };
     });
-  }, [customPlaylists, allFiles]);
+  }, [customPlaylists, allFiles, dbTracksMap]);
 
   // Compile folder-based Album playlists automatically
   const albumPlaylists = useMemo(() => {
@@ -226,13 +369,19 @@ export function PlaylistsSection({
       tracks,
       icon: "📁",
       isSystem: true,
+      isSmart: false,
       isAlbum: true,
     }));
   }, [allFiles]);
 
   const allPlaylistsList = useMemo(() => {
-    return [...systemPlaylists, ...albumPlaylists, ...customPlaylistsWithTracks];
-  }, [systemPlaylists, albumPlaylists, customPlaylistsWithTracks]);
+    return [
+      ...smartPlaylists,
+      ...customPlaylistsWithTracks,
+      ...systemPlaylists,
+      ...albumPlaylists,
+    ];
+  }, [smartPlaylists, customPlaylistsWithTracks, systemPlaylists, albumPlaylists]);
 
   // If a playlist detail view is active
   const selectedPlaylist = useMemo(() => {
@@ -244,7 +393,8 @@ export function PlaylistsSection({
   if (selectedPlaylist) {
     const topTrack = selectedPlaylist.tracks[0];
     const topThumbnail = topTrack?.thumbnail_url;
-    const totalSize = selectedPlaylist.tracks.reduce((acc, t) => acc + t.size_bytes, 0);
+    const totalSize = selectedPlaylist.tracks.reduce((acc, t) => acc + (t.size_bytes || 0), 0);
+    const isYtImport = "kind" in selectedPlaylist && selectedPlaylist.kind === "youtube-import";
 
     return (
       <div id={id} className="space-y-6 animate-in fade-in duration-200">
@@ -273,9 +423,9 @@ export function PlaylistsSection({
           )}
         </div>
 
-        {/* Playlist Hero Banner (Image 1 Style) */}
+        {/* Playlist Hero Banner */}
         <div className="relative rounded-3xl overflow-hidden glass-card p-6 sm:p-8 flex flex-col sm:flex-row items-center sm:items-end gap-6 shadow-2xl border border-white/10">
-          {/* Cover Art (Top track in queue as thumbnail) */}
+          {/* Cover Art */}
           <div className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-2xl overflow-hidden bg-zinc-900 shadow-2xl border border-white/15 shrink-0 group">
             {topThumbnail ? (
               <img
@@ -293,20 +443,33 @@ export function PlaylistsSection({
 
           {/* Details & Actions */}
           <div className="flex-1 space-y-3 text-center sm:text-left">
-            <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 font-bold px-2.5 py-1 rounded-full bg-white/10 border border-white/10 inline-block">
-              {selectedPlaylist.isSystem ? "System Playlist" : "User Playlist"}
-            </span>
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 font-bold px-2.5 py-1 rounded-full bg-white/10 border border-white/10 inline-block">
+                {selectedPlaylist.isSmart
+                  ? "Smart Playlist"
+                  : isYtImport
+                  ? "YouTube Import"
+                  : selectedPlaylist.isSystem
+                  ? "System Playlist"
+                  : "User Playlist"}
+              </span>
+              {isYtImport && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/30">
+                  YouTube Sync
+                </span>
+              )}
+            </div>
 
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
               {selectedPlaylist.name}
             </h1>
 
             <p className="text-xs text-zinc-400">
-              {selectedPlaylist.tracks.length} {selectedPlaylist.tracks.length === 1 ? "track" : "tracks"} •{" "}
-              {formatFileSize(totalSize)} total
+              {selectedPlaylist.tracks.length} {selectedPlaylist.tracks.length === 1 ? "track" : "tracks"}
+              {totalSize > 0 && ` • ${formatFileSize(totalSize)} total`}
             </p>
 
-            {/* Actions: Play All, Shuffle All */}
+            {/* Actions: Play All, Shuffle All, YouTube Refresh */}
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 pt-2">
               <button
                 onClick={() => {
@@ -338,6 +501,19 @@ export function PlaylistsSection({
                 </svg>
                 <span>Shuffle</span>
               </button>
+
+              {isYtImport && "rawRecord" in selectedPlaylist && (
+                <button
+                  type="button"
+                  onClick={() => handleRefreshYouTubePlaylist((selectedPlaylist as any).rawRecord)}
+                  disabled={isRefreshingYt}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 text-xs font-bold transition-all active:scale-95 disabled:opacity-50"
+                  title="Check YouTube for updated tracks in this playlist"
+                >
+                  <span className={isRefreshingYt ? "animate-spin inline-block" : ""}>🔄</span>
+                  <span>{isRefreshingYt ? "Refreshing..." : "Refresh Playlist"}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -346,7 +522,7 @@ export function PlaylistsSection({
         <div className="space-y-2">
           <div className="flex items-center justify-between px-1">
             <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-zinc-400">
-              Playlist Queue ({selectedPlaylist.tracks.length})
+              Tracks ({selectedPlaylist.tracks.length})
             </h3>
             <span className="text-[11px] text-zinc-500">Click any track to stream</span>
           </div>
@@ -356,15 +532,18 @@ export function PlaylistsSection({
               <span className="text-3xl">📭</span>
               <p className="text-sm text-zinc-400">This playlist is currently empty.</p>
               <p className="text-xs text-zinc-500">
-                Go to the Downloads History tab and click the ➕ button on any song to add it.
+                Play or like tracks online, or add songs from your Downloads History to populate it.
               </p>
             </div>
           ) : (
             selectedPlaylist.tracks.map((track, idx) => {
-              const isPlaying = currentPlayingFile?.filename === track.filename;
+              const isPlaying =
+                (currentPlayingFile?.youtube_id && track.youtube_id === currentPlayingFile.youtube_id) ||
+                (currentPlayingFile?.filename && track.filename === currentPlayingFile.filename);
+
               return (
                 <div
-                  key={track.filename}
+                  key={`${track.filename || track.youtube_id}-${idx}`}
                   onClick={() => onSelectTrack(track, selectedPlaylist.tracks, selectedPlaylist.name)}
                   className={`group flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-all ${
                     isPlaying
@@ -378,57 +557,58 @@ export function PlaylistsSection({
                       {isPlaying ? (
                         <span className={`${config.textAccent} animate-pulse`}>▶</span>
                       ) : (
-                        `${idx + 1}`
+                        idx + 1
                       )}
                     </span>
 
-                    {/* Thumbnail */}
-                    <div className="relative w-11 h-11 rounded-xl overflow-hidden bg-zinc-950 shrink-0 border border-white/10">
+                    {/* Artwork */}
+                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-zinc-900 border border-white/10 shrink-0 relative">
                       {track.thumbnail_url ? (
                         <img
                           src={resolveMediaUrl(track.thumbnail_url)}
-                          alt={track.clean_title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          alt={track.clean_title || track.filename}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-sm bg-zinc-900">
-                          {track.media_type === "video" ? "🎬" : "🎵"}
+                        <div className="w-full h-full flex items-center justify-center text-xs text-zinc-500">
+                          🎵
                         </div>
                       )}
                     </div>
 
-                    {/* Title & Metadata */}
+                    {/* Metadata */}
                     <div className="min-w-0 flex-1">
-                      <h4
+                      <p
                         className={`text-xs sm:text-sm font-semibold truncate ${
                           isPlaying ? "text-white font-bold" : "text-zinc-200 group-hover:text-white"
                         }`}
+                        style={{ color: isPlaying ? config.primaryHex : undefined }}
                       >
-                        {track.clean_title}
-                      </h4>
-                      <p className="text-[11px] text-zinc-400">
-                        {track.media_type === "video" ? "🎬 Video" : "🎵 Audio"} • {formatFileSize(track.size_bytes)}
+                        {track.clean_title || track.filename}
+                      </p>
+                      <p className="text-[11px] text-zinc-400 truncate">
+                        {track.artist || "Unknown Artist"}
+                        {track.album ? ` • ${track.album}` : ""}
                       </p>
                     </div>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 pl-2" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={() => onSelectTrack(track, selectedPlaylist.tracks, selectedPlaylist.name)}
-                      className={`p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 transition-colors ${
-                        isPlaying ? config.textAccent : ""
-                      }`}
-                      title="Play"
-                    >
-                      <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
-                    </button>
+                  {/* Actions & Duration */}
+                  <div className="flex items-center gap-3 shrink-0">
+                    {typeof track.duration === "number" && track.duration > 0 && (
+                      <span className="text-[11px] font-mono text-zinc-400 hidden sm:inline">
+                        {Math.floor(track.duration / 60)}:
+                        {Math.floor(track.duration % 60).toString().padStart(2, "0")}
+                      </span>
+                    )}
 
                     {!selectedPlaylist.isSystem && (
                       <button
-                        onClick={() => handleRemoveTrack(selectedPlaylist.id, track.filename)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveTrack(selectedPlaylist.id, track.filename || track.youtube_id || "");
+                        }}
                         className="p-2 text-zinc-500 hover:text-red-400 rounded-xl hover:bg-red-500/10 transition-colors"
                         title="Remove from playlist"
                       >
@@ -445,9 +625,9 @@ export function PlaylistsSection({
     );
   }
 
-  // Playlists Grid Hub (Image 1 & Image 2 Reference Style)
+  // Playlists Hub View
   return (
-    <div id={id} className="space-y-6 animate-in fade-in duration-200">
+    <div id={id} className="space-y-8 animate-in fade-in duration-200">
       {/* Header bar */}
       <div className="flex items-center justify-between gap-4">
         <div>
@@ -455,7 +635,7 @@ export function PlaylistsSection({
             Playlists Hub
           </h2>
           <p className="text-xs text-zinc-400 mt-1">
-            Browse, play continuous queues, and curate your personal music & video collections
+            Browse smart collections, import YouTube sets, and manage your library
           </p>
         </div>
 
@@ -487,72 +667,184 @@ export function PlaylistsSection({
         </div>
       </div>
 
-      {/* Grid of Playlists Cards (Desktop & Mobile, top track as cover art) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 sm:gap-5">
-        {allPlaylistsList.map((pl) => {
-          const topTrack = pl.tracks[0];
-          const topThumbnail = topTrack?.thumbnail_url;
-
-          return (
-            <div
-              key={pl.id}
-              onClick={() => setActivePlaylistId(pl.id)}
-              className="group relative flex flex-col rounded-3xl overflow-hidden glass-card p-3 sm:p-3.5 hover:border-white/25 cursor-pointer transition-all hover:-translate-y-1 shadow-xl"
-            >
-              {/* Dynamic Cover Artwork (Top track thumbnail auto-assigned) */}
-              <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-zinc-950 border border-white/10 shadow-md">
-                {topThumbnail ? (
-                  <img
-                    src={resolveMediaUrl(topThumbnail)}
-                    alt={pl.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 via-zinc-950 to-black text-4xl text-zinc-600">
-                    <span>{pl.icon}</span>
+      {/* ── SMART PLAYLISTS HERO SHELF ─────────────────────────────────────── */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-400 px-1">
+          Smart Collections
+        </h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+          {smartPlaylists.map((sp) => {
+            const count = sp.tracks.length;
+            return (
+              <div
+                key={sp.id}
+                onClick={() => setActivePlaylistId(sp.id)}
+                className="group relative flex flex-col justify-between p-4 rounded-2xl glass-card hover:border-white/30 cursor-pointer transition-all hover:-translate-y-0.5 shadow-lg overflow-hidden"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-xl group-hover:scale-110 transition-transform">
+                    {sp.icon}
                   </div>
-                )}
-
-                {/* Subtle vignette */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-60 group-hover:opacity-40 transition-opacity" />
-
-                {/* Quick Play Hover Button */}
-                {pl.tracks.length > 0 && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onPlayPlaylist(pl.tracks, 0, pl.name);
-                    }}
-                    className={`absolute bottom-2.5 right-2.5 w-10 h-10 rounded-full bg-gradient-to-r ${config.gradient} text-white flex items-center justify-center shadow-lg opacity-90 sm:opacity-0 sm:group-hover:opacity-100 sm:translate-y-2 sm:group-hover:translate-y-0 transition-all active:scale-90`}
-                    title="Play Playlist"
-                  >
-                    <svg className="w-4 h-4 ml-0.5 fill-current" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
-                  </button>
-                )}
-
-                {/* System Badge */}
-                {pl.isSystem && (
-                  <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-zinc-300 text-[9px] font-bold border border-white/10">
-                    System
-                  </span>
-                )}
+                  {count > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onPlayPlaylist(sp.tracks, 0, sp.name);
+                      }}
+                      className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity active:scale-90"
+                      title={`Play ${sp.name}`}
+                    >
+                      ▶
+                    </button>
+                  )}
+                </div>
+                <div className="pt-4 space-y-0.5">
+                  <h4 className="text-sm font-bold text-white group-hover:text-zinc-100 truncate">
+                    {sp.name}
+                  </h4>
+                  <p className="text-[11px] text-zinc-400">
+                    {count} {count === 1 ? "track" : "tracks"}
+                  </p>
+                </div>
               </div>
+            );
+          })}
+        </div>
+      </div>
 
-              {/* Playlist Title & Stats */}
-              <div className="pt-3 px-1 space-y-0.5">
-                <h3 className="text-xs sm:text-sm font-bold text-white group-hover:text-zinc-100 truncate">
-                  {pl.name}
-                </h3>
-                <p className="text-[11px] text-zinc-400">
-                  {pl.tracks.length} {pl.tracks.length === 1 ? "track" : "tracks"}
+      {/* ── RECENTLY PLAYED HORIZONTAL CAROUSEL (Spotify / YT Music Style) ───── */}
+      {recentlyPlayed.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-400">
+              Recently Played
+            </h3>
+            <button
+              onClick={() => setActivePlaylistId("smart-recent")}
+              className="text-xs text-zinc-400 hover:text-white font-semibold transition-colors"
+            >
+              See all ({recentlyPlayed.length}) →
+            </button>
+          </div>
+
+          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-white/10 -mx-1 px-1">
+            {recentlyPlayed.slice(0, 10).map((track, idx) => (
+              <div
+                key={`${track.filename || track.youtube_id}-${idx}`}
+                onClick={() => onSelectTrack(track, recentlyPlayed, "Recently Played")}
+                className="group w-32 sm:w-36 shrink-0 flex flex-col p-2.5 rounded-2xl glass-card hover:border-white/25 cursor-pointer transition-all hover:-translate-y-1 shadow-md"
+              >
+                <div className="relative w-full aspect-square rounded-xl overflow-hidden bg-zinc-900 border border-white/10 mb-2 shadow-inner">
+                  {track.thumbnail_url ? (
+                    <img
+                      src={resolveMediaUrl(track.thumbnail_url)}
+                      alt={track.clean_title || track.filename}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-xl text-zinc-600">
+                      🎵
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <span className="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center text-xs pl-0.5 shadow-lg">
+                      ▶
+                    </span>
+                  </div>
+                </div>
+                <p className="text-xs font-bold text-white truncate">
+                  {track.clean_title || track.filename}
+                </p>
+                <p className="text-[10px] text-zinc-400 truncate">
+                  {track.artist || "Unknown Artist"}
                 </p>
               </div>
-            </div>
-          );
-        })}
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── ALL PLAYLISTS & CUSTOM COLLECTIONS ──────────────────────────────── */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-400 px-1">
+          Playlists & Sets
+        </h3>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 sm:gap-5">
+          {allPlaylistsList
+            .filter((pl) => !pl.isSmart)
+            .map((pl) => {
+              const topTrack = pl.tracks[0];
+              const topThumbnail = topTrack?.thumbnail_url;
+              const isYt = "kind" in pl && pl.kind === "youtube-import";
+
+              return (
+                <div
+                  key={pl.id}
+                  onClick={() => setActivePlaylistId(pl.id)}
+                  className="group relative flex flex-col rounded-3xl overflow-hidden glass-card p-3 sm:p-3.5 hover:border-white/25 cursor-pointer transition-all hover:-translate-y-1 shadow-xl"
+                >
+                  {/* Dynamic Cover Artwork */}
+                  <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-zinc-950 border border-white/10 shadow-md">
+                    {topThumbnail ? (
+                      <img
+                        src={resolveMediaUrl(topThumbnail)}
+                        alt={pl.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 via-zinc-950 to-black text-4xl text-zinc-600">
+                        <span>{pl.icon}</span>
+                      </div>
+                    )}
+
+                    {/* Subtle vignette */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-60 group-hover:opacity-40 transition-opacity" />
+
+                    {/* Quick Play Hover Button */}
+                    {pl.tracks.length > 0 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onPlayPlaylist(pl.tracks, 0, pl.name);
+                        }}
+                        className={`absolute bottom-2.5 right-2.5 w-10 h-10 rounded-full bg-gradient-to-r ${config.gradient} text-white flex items-center justify-center shadow-lg opacity-90 sm:opacity-0 sm:group-hover:opacity-100 sm:translate-y-2 sm:group-hover:translate-y-0 transition-all active:scale-90`}
+                        title="Play Playlist"
+                      >
+                        <svg className="w-4 h-4 ml-0.5 fill-current" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </button>
+                    )}
+
+                    {/* Badges */}
+                    {isYt ? (
+                      <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-red-600/80 backdrop-blur-md text-white text-[9px] font-bold border border-red-500/30 flex items-center gap-1">
+                        <span>▶</span> YouTube
+                      </span>
+                    ) : pl.isSystem ? (
+                      <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-zinc-300 text-[9px] font-bold border border-white/10">
+                        System
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {/* Playlist Title & Stats */}
+                  <div className="pt-3 px-1 space-y-0.5">
+                    <h3 className="text-xs sm:text-sm font-bold text-white group-hover:text-zinc-100 truncate">
+                      {pl.name}
+                    </h3>
+                    <p className="text-[11px] text-zinc-400">
+                      {pl.tracks.length} {pl.tracks.length === 1 ? "track" : "tracks"}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+        </div>
       </div>
 
       {/* New Playlist Modal */}

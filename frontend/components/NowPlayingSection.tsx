@@ -7,6 +7,7 @@ import { formatFileSize } from "@/lib/websocket";
 import { useTheme } from "../context/ThemeContext";
 import { addHistoryEntry } from "@/lib/db";
 import { isTrackSavedOffline, saveTrackForOffline, removeTrackFromOffline } from "@/lib/offlineManager";
+import { QueueDrawer } from "./QueueDrawer";
 
 export interface NowPlayingSectionHandle {
   togglePlayPause: () => void;
@@ -26,6 +27,21 @@ interface NowPlayingSectionProps {
   onGoToHistory: () => void;
   onPlaybackStateChange?: (isPlaying: boolean) => void;
   onControlsVisibilityChange?: (visible: boolean) => void;
+
+  // Additive player engine props
+  repeatMode?: "off" | "all" | "one";
+  isShuffle?: boolean;
+  isLiked?: boolean;
+  onToggleRepeat?: () => void;
+  onToggleShuffle?: () => void;
+  onToggleLike?: () => void;
+  queueTracks?: FileInfo[];
+  onReorderQueue?: (fromIndex: number, toIndex: number) => void;
+  onRemoveFromQueue?: (index: number) => void;
+  onClearQueue?: () => void;
+  onSelectQueueIndex?: (index: number) => void;
+  sleepTimerMode?: "15" | "30" | "60" | "track_end" | null;
+  onSetSleepTimer?: (mode: "15" | "30" | "60" | "track_end" | null) => void;
 }
 
 function formatDuration(seconds: number): string {
@@ -34,7 +50,6 @@ function formatDuration(seconds: number): string {
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
-
 
 export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingSectionProps>(
   function NowPlayingSection(
@@ -50,6 +65,19 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
       onGoToHistory,
       onPlaybackStateChange,
       onControlsVisibilityChange,
+      repeatMode,
+      isShuffle,
+      isLiked,
+      onToggleRepeat,
+      onToggleShuffle,
+      onToggleLike,
+      queueTracks = [],
+      onReorderQueue,
+      onRemoveFromQueue,
+      onClearQueue,
+      onSelectQueueIndex,
+      sleepTimerMode,
+      onSetSleepTimer,
     },
     ref
   ) {
@@ -99,6 +127,8 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
     const [isCurrentOffline, setIsCurrentOffline] = useState(false);
     const [isSavingOffline, setIsSavingOffline] = useState(false);
     const [saveProgress, setSaveProgress] = useState(0);
+    const [isQueueOpen, setIsQueueOpen] = useState(false);
+    const [showSleepMenu, setShowSleepMenu] = useState(false);
 
     // Sync offline status for current track
     useEffect(() => {
@@ -662,20 +692,37 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
 
           {/* Minimalist Apple / Nothing Transport Controls */}
           <div className="flex items-center justify-between sm:justify-around px-2 pt-1 relative">
-            {/* Repeat Toggle */}
+            {/* 3-State Repeat Toggle (off -> all -> one -> off) */}
             <button
-              onClick={() => setIsRepeat(!isRepeat)}
-              className={`p-2.5 rounded-full text-sm transition-all active:scale-95 ${
-                isRepeat
+              type="button"
+              onClick={() => (onToggleRepeat ? onToggleRepeat() : setIsRepeat(!isRepeat))}
+              className={`p-2.5 rounded-full text-sm transition-all active:scale-95 relative ${
+                (repeatMode ? repeatMode !== "off" : isRepeat)
                   ? "bg-white/10 border border-white/20 shadow-sm"
                   : "text-zinc-400 hover:text-white"
               }`}
-              style={{ color: isRepeat ? config.primaryHex : undefined }}
-              title={isRepeat ? "Repeat is ON" : "Repeat is OFF"}
+              style={{
+                color: (repeatMode ? repeatMode !== "off" : isRepeat) ? config.primaryHex : undefined,
+              }}
+              title={
+                repeatMode === "one"
+                  ? "Repeat One (Click to turn off)"
+                  : repeatMode === "all" || isRepeat
+                  ? "Repeat All (Click for Repeat One)"
+                  : "Repeat Off (Click to turn on)"
+              }
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
+              {repeatMode === "one" && (
+                <span
+                  className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center text-zinc-950 shadow"
+                  style={{ backgroundColor: config.primaryHex }}
+                >
+                  1
+                </span>
+              )}
             </button>
 
             {/* Previous Track */}
@@ -723,17 +770,125 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
               </svg>
             </button>
 
-            {/* Shuffle in Active Playlist (Unified in lower controls bar) */}
+            {/* Shuffle in Active Playlist */}
             <button
-              onClick={handleShuffle}
+              type="button"
+              onClick={() => (onToggleShuffle ? onToggleShuffle() : handleShuffle())}
               disabled={currentPlaylistFiles.length <= 1}
-              className="p-2.5 text-zinc-400 hover:text-white disabled:opacity-30 rounded-full hover:bg-white/5 active:scale-90 transition-all"
-              title="Shuffle in current playlist"
+              className={`p-2.5 rounded-full transition-all active:scale-90 ${
+                isShuffle
+                  ? "bg-white/10 border border-white/20 shadow-sm"
+                  : "text-zinc-400 hover:text-white"
+              }`}
+              style={{ color: isShuffle ? config.primaryHex : undefined }}
+              title={isShuffle ? "Shuffle is ON" : "Shuffle is OFF"}
             >
               <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
                 <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z" />
               </svg>
             </button>
+
+            {/* Like Track */}
+            {onToggleLike && (
+              <button
+                type="button"
+                onClick={onToggleLike}
+                className={`p-2.5 rounded-full transition-all active:scale-90 ${
+                  isLiked ? "text-pink-500 bg-pink-500/15" : "text-zinc-400 hover:text-white"
+                }`}
+                title={isLiked ? "Liked track (Click to unlike)" : "Like track"}
+              >
+                <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                </svg>
+              </button>
+            )}
+
+            {/* Queue Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setIsQueueOpen(true)}
+              className="p-2.5 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 active:scale-90 transition-all relative"
+              title="View Queue"
+            >
+              <svg className="w-5 h-5 fill-none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h7" />
+              </svg>
+              {queueTracks.length > 0 && (
+                <span
+                  className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full"
+                  style={{ backgroundColor: config.primaryHex }}
+                />
+              )}
+            </button>
+
+            {/* Sleep Timer Menu */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowSleepMenu(!showSleepMenu)}
+                className={`p-2.5 rounded-full transition-all active:scale-90 ${
+                  sleepTimerMode ? "text-amber-400 bg-amber-400/15" : "text-zinc-400 hover:text-white"
+                }`}
+                title={sleepTimerMode ? `Sleep timer active (${sleepTimerMode})` : "Sleep Timer"}
+              >
+                <svg className="w-5 h-5 fill-none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+              </button>
+              {showSleepMenu && onSetSleepTimer && (
+                <div
+                  className="absolute bottom-12 right-0 w-36 bg-zinc-950 border border-white/15 rounded-2xl p-1.5 shadow-2xl z-50 space-y-1 animate-in fade-in zoom-in-95 duration-150"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={() => { onSetSleepTimer(null); setShowSleepMenu(false); }}
+                    className={`w-full text-left px-3 py-1.5 text-xs rounded-xl transition-colors ${
+                      !sleepTimerMode ? "text-white bg-white/10" : "text-zinc-400 hover:text-white hover:bg-white/5"
+                    }`}
+                  >
+                    Off
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onSetSleepTimer("15"); setShowSleepMenu(false); }}
+                    className={`w-full text-left px-3 py-1.5 text-xs rounded-xl transition-colors ${
+                      sleepTimerMode === "15" ? "text-amber-400 bg-amber-400/10" : "text-zinc-300 hover:text-white hover:bg-white/5"
+                    }`}
+                  >
+                    15 minutes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onSetSleepTimer("30"); setShowSleepMenu(false); }}
+                    className={`w-full text-left px-3 py-1.5 text-xs rounded-xl transition-colors ${
+                      sleepTimerMode === "30" ? "text-amber-400 bg-amber-400/10" : "text-zinc-300 hover:text-white hover:bg-white/5"
+                    }`}
+                  >
+                    30 minutes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onSetSleepTimer("60"); setShowSleepMenu(false); }}
+                    className={`w-full text-left px-3 py-1.5 text-xs rounded-xl transition-colors ${
+                      sleepTimerMode === "60" ? "text-amber-400 bg-amber-400/10" : "text-zinc-300 hover:text-white hover:bg-white/5"
+                    }`}
+                  >
+                    60 minutes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onSetSleepTimer("track_end"); setShowSleepMenu(false); }}
+                    className={`w-full text-left px-3 py-1.5 text-xs rounded-xl transition-colors ${
+                      sleepTimerMode === "track_end" ? "text-amber-400 bg-amber-400/10" : "text-zinc-300 hover:text-white hover:bg-white/5"
+                    }`}
+                  >
+                    End of Track
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Dynamic Volume Control (Double-click/tap: Mute/Unmute, Click/Tap: Adjust vertical slider) */}
             <div id="volume-slider-container" className="relative z-40">
@@ -964,6 +1119,30 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
             </div>
           </div>
         )}
+
+        {/* Universal Queue Slide-Over Drawer */}
+        <QueueDrawer
+          isOpen={isQueueOpen}
+          onClose={() => setIsQueueOpen(false)}
+          currentTrack={currentFile}
+          queueTracks={queueTracks}
+          currentIndex={queueTracks.findIndex(
+            (t) =>
+              (currentFile?.youtube_id && t.youtube_id === currentFile.youtube_id) ||
+              (currentFile?.filename && t.filename === currentFile.filename)
+          )}
+          isPlaying={isPlaying}
+          onSelectIndex={(idx) => {
+            if (onSelectQueueIndex) {
+              onSelectQueueIndex(idx);
+            } else if (queueTracks[idx]) {
+              onSelectTrack(queueTracks[idx]);
+            }
+          }}
+          onRemoveIndex={(idx) => onRemoveFromQueue?.(idx)}
+          onMoveIndex={(from, to) => onReorderQueue?.(from, to)}
+          onClearQueue={() => onClearQueue?.()}
+        />
 
       </div>
     );

@@ -243,3 +243,185 @@ This guarantees that:
 | Mixed content errors on WebSockets behind HTTPS | Medium | Derive WebSocket URL dynamically (`wss://`) when `NEXT_PUBLIC_WS_URL` is empty. |
 | Service worker intercepts Range requests and breaks seeking | High | Explicit URL exclusion rules in `public/sw.js` ensuring all `/api/stream/*` and `/api/files/*` bypass SW. |
 | `extract_info` returns None due to `ignoreerrors: True` | Medium | Explicitly guard `if info is None` in `stream_service.py` and raise typed `VideoUnavailableError`. |
+
+---
+
+## 6. Phase 2b & 3b: Music Player Engine, Queue, Extended Playlists & History
+
+### Architectural Objective
+Upgrade the player from a simple file/stream player to a full Spotify / YouTube Music style engine with:
+- Pure, unit-tested queue management (`lib/player/queue.ts`)
+- Persistent single audio element with secondary warmup preload
+- IndexedDB v2 schema migration for unified track records, play counts, history, liked tracks, and YouTube playlist imports
+- Smart computed playlists (**Recently Played**, **Most Played**, **Liked Songs**, **Saved Offline**)
+- Minimal, additive touchpoints in existing UI components (`NowPlayingSection`, `MiniPlayerBar`, `page.tsx`, `PlaylistsSection`)
+
+### Data Model & IndexedDB Migration (v2 in `lib/db.ts`)
+Upgrade `DB_VERSION` from `1` to `2` with an automated migration preserving existing v1 custom playlists:
+```typescript
+// Unified track record shared across all playlists
+export interface TrackRecord {
+  id: string; // YouTube video ID or "lib:<filename>"
+  title: string;
+  artist: string;
+  durationSec: number;
+  thumbnailUrl?: string | null;
+  source: "youtube" | "library";
+  unavailable?: boolean;
+  addedAt: number;
+}
+
+// User and imported playlists
+export interface PlaylistRecord {
+  id: string; // UUID
+  name: string;
+  kind: "user" | "youtube-import";
+  sourceUrl?: string;
+  trackIds: string[]; // Order = array order
+  coverTrackId?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Playback history entry (capped at 500 entries)
+export interface PlayHistoryEntry {
+  key?: number; // Auto-increment
+  trackId: string;
+  playedAt: number; // Timestamp
+  listenedSec: number;
+  completed: boolean;
+}
+
+// Aggregated play counts for "Most Played"
+export interface PlayCountEntry {
+  trackId: string;
+  count: number;
+  lastPlayedAt: number;
+}
+
+// Liked tracks store
+export interface LikedTrackEntry {
+  trackId: string;
+  likedAt: number;
+}
+
+// Persisted player state (saved throttled every ~5s, on pause, and on track change)
+export interface PersistedPlayerState {
+  queue: QueueItem[];
+  currentIndex: number;
+  positionSec: number;
+  shuffle: boolean;
+  repeat: "off" | "all" | "one";
+  volume: number;
+  muted: boolean;
+}
+```
+
+#### Migration Logic:
+- In `upgrade(db, oldVersion, newVersion, transaction)`:
+  - If `oldVersion < 2`:
+    - Read existing `playlists` store (`CustomPlaylist` with `songFilenames: string[]`).
+    - Map each playlist to `PlaylistRecord` with `kind: "user"` and `trackIds = songFilenames.map(f => f.startsWith('lib:') ? f : 'lib:' + f)`.
+    - Create new object stores: `playCounts` (keyPath `trackId`), `likedTracks` (keyPath `trackId`), and indexes on `history` (`by-trackId`, `by-playedAt`).
+    - Create `tracks` records for all legacy library files so they are immediately queryable.
+
+#### History & Qualification Rule:
+- A play is recorded to `history` **only** after listening for **≥ 30 seconds** OR **≥ 50% of the track duration** (whichever is smaller).
+- Skipping after <30s (and <50%) is discarded.
+- Re-playing a track keeps the full log (capped at 500 records), and moves the track to the top of the de-duplicated **Recently Played** computed list (top 50 unique tracks).
+
+### Queue Engine Architecture (`frontend/lib/player/queue.ts`)
+A framework-agnostic, pure TypeScript class/module with zero DOM/React dependencies, fully testable via Node unit tests:
+```typescript
+export interface QueueItem {
+  qid: string;     // Unique UUID/nonce per queue entry (allows duplicate songs in queue)
+  trackId: string; // References TrackRecord.id
+}
+
+export type RepeatMode = "off" | "all" | "one";
+```
+- **State**:
+  - `items: QueueItem[]`
+  - `currentIndex: number`
+  - `shuffle: boolean`
+  - `repeat: RepeatMode`
+  - `originalOrder: QueueItem[]` (stored upon shuffle activation)
+  - `historyStack: number[]` (indexes traversed while in shuffle mode, so "prev" retraces previous tracks rather than generating random picks)
+- **Core Operations**:
+  - `setQueue(items, startIndex, shuffle)`: Loads a playlist/album context.
+  - `playNow(trackId)`: Inserts track immediately at or after `currentIndex` and plays it.
+  - `playNext(trackId)`: Inserts track immediately at `currentIndex + 1`.
+  - `addToQueue(trackId)`: Appends track to the tail of `items` (and `originalOrder`).
+  - `remove(qid)`: Removes item; if currently playing item is removed, smoothly advances to next.
+  - `clear()`: Clears upcoming queue items while retaining the current track.
+  - `move(fromIndex, toIndex)`: Reorders queue items in place.
+  - `next(isAutoplay)`:
+    - If `repeat === "one"` and `isAutoplay`: repeats current track.
+    - If manual `next`: advances to next track even if repeat one is active.
+    - If at end of queue: if `repeat === "all"` wraps to 0; if `repeat === "off"` stops and resets to first track paused.
+  - `prev(currentTimeSec)`:
+    - If `currentTimeSec > 3`: restarts current track (`currentTime = 0`).
+    - If `currentTimeSec <= 3`:
+      - If `shuffle` and `historyStack.length > 0`: pops and returns previous index from `historyStack`.
+      - Otherwise: decrements `currentIndex` (wraps if `repeat === "all"`).
+  - `toggleShuffle()`:
+    - On: pins current item at index 0, Fisher-Yates shuffles remaining items, saves `originalOrder`, resets `historyStack = [0]`.
+    - Off: restores `originalOrder`, finds current item's new index in `originalOrder`.
+  - `toggleRepeat()`: Cycles `"off"` -> `"all"` -> `"one"` -> `"off"`.
+
+### Playback Controller & Preload Manager
+- **Single persistent audio element**: reused to maintain background playback on mobile and survive tab switching.
+- **Next-track preloading**:
+  - When `currentTime / duration >= 0.75` or `duration - currentTime <= 20`:
+  - If user is NOT offline and streaming quality is NOT `saver`:
+  - Inspect next queue item. Warm up upstream metadata via a secondary hidden `Audio` element (`preload="metadata"` to conserve VM memory and client data).
+  - Respect `MAX_CONCURRENT_STREAMS = 3`.
+- **Long-track resume**:
+  - For tracks with `durationSec > 600` (10 minutes), save progress to IndexedDB and prompt/auto-resume position.
+- **Sleep timer**:
+  - Selectable intervals: 15 min, 30 min, 60 min, or "End of track".
+  - Fades out volume over 5s and pauses audio element upon expiration.
+- **Media Session API**:
+  - Updates title, artist, artwork on track change.
+  - Registers `play`, `pause`, `previoustrack`, `nexttrack`, `seekto`, `seekbackward`, `seekforward`.
+  - Calls `navigator.mediaSession.setPositionState` for smooth lock-screen scrubbing.
+- **Keyboard shortcuts**:
+  - Space: toggle play/pause
+  - ArrowLeft / ArrowRight: seek -5s / +5s
+  - Shift + ArrowLeft / ArrowRight: previous / next track
+  - M: toggle mute
+  - Discarded when user is typing in `input`, `textarea`, or search bar.
+- **Stale stream recovery**:
+  - On audio element `error` for a stream URL, retry once with `?retry=1` cache buster before flagging track as `unavailable` and auto-skipping.
+  - Stop auto-skipping after 3 consecutive failures to prevent infinite loops.
+
+### UI Integration Plan (Minimal & Additive Touchpoints)
+1. **`NowPlayingSection.tsx`**:
+   - Retain all existing props (`currentFile`, `playlist`, `allFiles`, `playlistName`, `onSelectTrack`, `onPlayNext`, `onPlayPrev`, `onPlaybackStateChange`, `onControlsVisibilityChange`).
+   - Add top-right/bottom control triggers:
+     - 3-state Repeat button (off / all / one with badge)
+     - Shuffle button (active highlight)
+     - Like button (heart icon, toggle in IndexedDB)
+     - Queue drawer toggle button
+     - Sleep timer menu
+   - Slide-over **Queue Drawer**:
+     - Shows "Now Playing" card + "Up Next" list
+     - Drag/drop or native pointer touch reorder
+     - "Play Next" context action, remove item button, "Clear Queue"
+2. **`MiniPlayerBar.tsx`**:
+   - Add compact "Next" and "Prev" control buttons alongside Play/Pause.
+   - Add a subtle top-border progress bar showing playback percentage.
+   - Retain full click-to-expand behavior.
+3. **`PlaylistsSection.tsx`**:
+   - Add top section for Smart Playlists:
+     - **Recently Played** (horizontal scroll cards, last 50 unique tracks)
+     - **Most Played** (top tracks by play count)
+     - **Liked Songs** (heart icon, all tracks liked by user)
+     - **Saved Offline** (instant offline playback filter)
+   - For YouTube imported playlists:
+     - Display import badge + "Refresh Playlist" button (re-queries `/api/info`, updates track list, alerts on added/removed items)
+4. **`app/page.tsx`**:
+   - Retain existing tab layout (`downloader`, `history`, `playlists`, `player`).
+   - Initialize and synchronize the shared queue and playback engine.
+   - Keep downloader UI and all download flows completely unchanged.
+

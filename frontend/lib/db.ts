@@ -1,22 +1,77 @@
 /**
- * IndexedDB storage layer for YT Music Online Player.
+ * IndexedDB storage layer for YT Music Online Player (Version 2).
  *
  * Uses the lightweight 'idb' wrapper around IndexedDB.
- * Manages playlists, playback history, user settings, cached track metadata,
- * and downloaded offline audio/thumbnail Blobs.
+ * Manages:
+ * - Unified tracks repository (YouTube streams + downloaded library files)
+ * - Custom and imported playlists
+ * - Playback history with listen-qualification (>=30s or >=50%) and capped log (500 items)
+ * - Aggregated play counts ("Most Played")
+ * - Liked songs ("Liked Tracks")
+ * - User settings & throttled playerState persistence
+ * - Downloaded offline audio/thumbnail Blobs (NEVER ephemeral object URLs)
  *
  * All operations are SSR-safe and fall back gracefully if IndexedDB is unavailable.
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
-import type { FileInfo } from "./types";
+import type { FileInfo, PlaylistInfoResponse } from "./types";
+import type { PersistedPlayerState } from "./player/types";
 
-export interface CustomPlaylist {
-  id: string;
+// ── Types ──────────────────────────────────────────────────────────────────
+
+export interface TrackRecord {
+  id: string; // YouTube video ID or "lib:<filename>"
+  title: string;
+  artist: string;
+  durationSec: number;
+  thumbnailUrl?: string | null;
+  source: "youtube" | "library";
+  unavailable?: boolean;
+  addedAt: number;
+  metadata?: FileInfo; // Cached snapshot for instant rendering
+}
+
+export interface PlaylistRecord {
+  id: string; // UUID or legacy id
   name: string;
-  songFilenames: string[];
+  kind?: "user" | "youtube-import";
+  sourceUrl?: string;
+  trackIds?: string[]; // Ordered list of track IDs
+  coverTrackId?: string;
   createdAt?: number;
   updatedAt?: number;
+  songFilenames: string[]; // Required for complete backwards compatibility
+}
+
+// Backwards-compatibility alias for components expecting CustomPlaylist
+export type CustomPlaylist = PlaylistRecord;
+
+export interface HistoryRecord {
+  key?: number; // Auto-increment primary key
+  trackId: string;
+  playedAt: number;
+  listenedSec: number;
+  completed: boolean;
+  track?: FileInfo; // Backwards-compatible snapshot
+  timestamp?: number;
+}
+
+export interface PlayCountRecord {
+  trackId: string;
+  count: number;
+  lastPlayedAt: number;
+}
+
+export interface LikedTrackRecord {
+  trackId: string;
+  likedAt: number;
+}
+
+export interface SettingRecord {
+  key: string;
+  value: unknown;
+  updatedAt: number;
 }
 
 export interface OfflineTrackRecord {
@@ -29,36 +84,36 @@ export interface OfflineTrackRecord {
   sizeBytes: number;
 }
 
-export interface HistoryRecord {
-  timestamp: number;
-  track: FileInfo;
-}
-
-export interface SettingRecord {
-  key: string;
-  value: unknown;
-  updatedAt: number;
-}
-
-export interface TrackRecord {
-  id: string;
-  track: FileInfo;
-  updatedAt: number;
-}
+// ── Database Schema ────────────────────────────────────────────────────────
 
 export interface MusicPlayerDBSchema extends DBSchema {
   playlists: {
     key: string;
-    value: CustomPlaylist;
+    value: PlaylistRecord;
+    indexes: { "by-kind": string };
   };
   tracks: {
     key: string;
     value: TrackRecord;
+    indexes: { "by-source": string };
   };
   history: {
     key: number;
     value: HistoryRecord;
-    indexes: { "by-timestamp": number };
+    indexes: {
+      "by-playedAt": number;
+      "by-trackId": string;
+      "by-timestamp"?: number;
+    };
+  };
+  playCounts: {
+    key: string;
+    value: PlayCountRecord;
+    indexes: { "by-count": number };
+  };
+  likedTracks: {
+    key: string;
+    value: LikedTrackRecord;
   };
   settings: {
     key: string;
@@ -72,7 +127,7 @@ export interface MusicPlayerDBSchema extends DBSchema {
 }
 
 const DB_NAME = "yt_music_player_db";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 export const LOCAL_STORAGE_PLAYLISTS_KEY = "ytdl_user_playlists_v1";
 export const LEGACY_PLAYLISTS_KEY = "ytdl_custom_playlists_v1";
 
@@ -87,16 +142,20 @@ export function getDB(): Promise<IDBPDatabase<MusicPlayerDBSchema>> | null {
   }
   if (!dbPromise) {
     dbPromise = openDB<MusicPlayerDBSchema>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
+      upgrade(db, oldVersion, newVersion, transaction) {
+        // ── Stores created in v1 ──
         if (!db.objectStoreNames.contains("playlists")) {
-          db.createObjectStore("playlists", { keyPath: "id" });
+          const playlistStore = db.createObjectStore("playlists", { keyPath: "id" });
+          playlistStore.createIndex("by-kind", "kind");
         }
         if (!db.objectStoreNames.contains("tracks")) {
-          db.createObjectStore("tracks", { keyPath: "id" });
+          const trackStore = db.createObjectStore("tracks", { keyPath: "id" });
+          trackStore.createIndex("by-source", "source");
         }
         if (!db.objectStoreNames.contains("history")) {
-          const historyStore = db.createObjectStore("history", { keyPath: "timestamp" });
-          historyStore.createIndex("by-timestamp", "timestamp");
+          const historyStore = db.createObjectStore("history", { keyPath: "key", autoIncrement: true });
+          historyStore.createIndex("by-playedAt", "playedAt");
+          historyStore.createIndex("by-trackId", "trackId");
         }
         if (!db.objectStoreNames.contains("settings")) {
           db.createObjectStore("settings", { keyPath: "key" });
@@ -105,37 +164,214 @@ export function getDB(): Promise<IDBPDatabase<MusicPlayerDBSchema>> | null {
           const offlineStore = db.createObjectStore("offlineTracks", { keyPath: "id" });
           offlineStore.createIndex("by-filename", "filename");
         }
+
+        // ── Upgrades for v2 ──
+        if (oldVersion < 2) {
+          if (!db.objectStoreNames.contains("playCounts")) {
+            const playCountsStore = db.createObjectStore("playCounts", { keyPath: "trackId" });
+            playCountsStore.createIndex("by-count", "count");
+          }
+          if (!db.objectStoreNames.contains("likedTracks")) {
+            db.createObjectStore("likedTracks", { keyPath: "trackId" });
+          }
+
+          // Ensure indexes on existing stores
+          const playlistStore = transaction.objectStore("playlists");
+          if (!playlistStore.indexNames.contains("by-kind")) {
+            playlistStore.createIndex("by-kind", "kind");
+          }
+
+          const trackStore = transaction.objectStore("tracks");
+          if (!trackStore.indexNames.contains("by-source")) {
+            trackStore.createIndex("by-source", "source");
+          }
+
+          const historyStore = transaction.objectStore("history");
+          if (!historyStore.indexNames.contains("by-playedAt")) {
+            historyStore.createIndex("by-playedAt", "playedAt");
+          }
+          if (!historyStore.indexNames.contains("by-trackId")) {
+            historyStore.createIndex("by-trackId", "trackId");
+          }
+        }
       },
     });
   }
   return dbPromise;
 }
 
-// ── PLAYLISTS REPOSITORY ───────────────────────────────────────────────────
-
-const DEFAULT_PLAYLISTS: CustomPlaylist[] = [
-  { id: "pl-favorites", name: "Favorites ⭐", songFilenames: [] },
-  { id: "pl-workout", name: "Workout Energy ⚡", songFilenames: [] },
-  { id: "pl-chill", name: "Late Night Chill 🌙", songFilenames: [] },
-];
+// ── TRACK CONVERSION HELPERS ───────────────────────────────────────────────
 
 /**
- * Read backup playlists from localStorage.
+ * Standardize FileInfo to a TrackRecord with stable ID.
  */
-function getLocalStoragePlaylistsBackup(): CustomPlaylist[] {
-  if (typeof window === "undefined") return [];
+export function fileInfoToTrackRecord(file: FileInfo): TrackRecord {
+  let id = file.youtube_id || "";
+  let source: "youtube" | "library" = "youtube";
+
+  if (!id) {
+    if (file.filename.startsWith("lib:")) {
+      id = file.filename;
+      source = "library";
+    } else {
+      id = `lib:${file.filename}`;
+      source = "library";
+    }
+  }
+
+  return {
+    id,
+    title: file.clean_title || file.filename,
+    artist: file.artist || "Unknown Artist",
+    durationSec: typeof file.duration === "number" ? file.duration : 0,
+    thumbnailUrl: file.thumbnail_url || null,
+    source,
+    addedAt: Date.now(),
+    metadata: file,
+  };
+}
+
+/**
+ * Convert a TrackRecord back into a FileInfo compatible with player components.
+ */
+export function trackRecordToFileInfo(tr: TrackRecord): FileInfo {
+  if (tr.metadata) {
+    return {
+      ...tr.metadata,
+      clean_title: tr.title,
+      artist: tr.artist,
+      duration: tr.durationSec,
+      thumbnail_url: tr.thumbnailUrl,
+    };
+  }
+
+  const isLibrary = tr.source === "library" || tr.id.startsWith("lib:");
+  const cleanFilename = tr.id.replace(/^lib:/, "");
+
+  return {
+    filename: isLibrary ? cleanFilename : `${tr.id}.m4a`,
+    clean_title: tr.title,
+    artist: tr.artist,
+    media_type: "audio",
+    size_bytes: 0,
+    created_at: new Date(tr.addedAt).toISOString(),
+    modified_at: new Date(tr.addedAt).toISOString(),
+    download_url: isLibrary ? `/api/files/${cleanFilename}` : "",
+    thumbnail_url: tr.thumbnailUrl,
+    youtube_id: isLibrary ? undefined : tr.id,
+    source_type: isLibrary ? "library" : "stream",
+    duration: tr.durationSec,
+  };
+}
+
+// ── TRACKS REPOSITORY ──────────────────────────────────────────────────────
+
+export async function upsertTrack(track: TrackRecord): Promise<void> {
+  const dbPromiseRef = getDB();
+  if (!dbPromiseRef) return;
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_PLAYLISTS_KEY) || localStorage.getItem(LEGACY_PLAYLISTS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const db = await dbPromiseRef;
+    await db.put("tracks", track);
+  } catch (err) {
+    console.warn("Failed to upsert track in IndexedDB:", err);
+  }
+}
+
+export async function getTrack(trackId: string): Promise<TrackRecord | undefined> {
+  const dbPromiseRef = getDB();
+  if (!dbPromiseRef) return undefined;
+  try {
+    const db = await dbPromiseRef;
+    return await db.get("tracks", trackId);
+  } catch {
+    return undefined;
+  }
+}
+
+export async function getTracks(trackIds: string[]): Promise<TrackRecord[]> {
+  const dbPromiseRef = getDB();
+  if (!dbPromiseRef || trackIds.length === 0) return [];
+  try {
+    const db = await dbPromiseRef;
+    const tx = db.transaction("tracks", "readonly");
+    const results: TrackRecord[] = [];
+    for (const id of trackIds) {
+      const record = await tx.store.get(id);
+      if (record) results.push(record);
+    }
+    return results;
   } catch {
     return [];
   }
 }
 
-/**
- * Write continuous backup to localStorage for crash resilience.
- */
-function updateLocalStorageBackup(playlists: CustomPlaylist[]): void {
+// ── PLAYLISTS REPOSITORY ───────────────────────────────────────────────────
+
+const DEFAULT_PLAYLISTS: PlaylistRecord[] = [
+  {
+    id: "pl-favorites",
+    name: "Favorites ⭐",
+    kind: "user",
+    trackIds: [],
+    songFilenames: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  },
+  {
+    id: "pl-workout",
+    name: "Workout Energy ⚡",
+    kind: "user",
+    trackIds: [],
+    songFilenames: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  },
+  {
+    id: "pl-chill",
+    name: "Late Night Chill 🌙",
+    kind: "user",
+    trackIds: [],
+    songFilenames: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  },
+];
+
+function normalizePlaylistRecord(p: any): PlaylistRecord {
+  const trackIds: string[] = Array.isArray(p.trackIds)
+    ? p.trackIds
+    : Array.isArray(p.songFilenames)
+    ? p.songFilenames.map((f: string) => (f.startsWith("lib:") ? f : `lib:${f}`))
+    : [];
+
+  return {
+    id: p.id || `pl_${Date.now()}`,
+    name: p.name || "Untitled Playlist",
+    kind: p.kind === "youtube-import" ? "youtube-import" : "user",
+    sourceUrl: p.sourceUrl,
+    trackIds,
+    songFilenames: trackIds.map((id) => id.replace(/^lib:/, "")),
+    coverTrackId: p.coverTrackId || (trackIds.length > 0 ? trackIds[0] : undefined),
+    createdAt: p.createdAt || Date.now(),
+    updatedAt: p.updatedAt || Date.now(),
+  };
+}
+
+function getLocalStoragePlaylistsBackup(): PlaylistRecord[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw =
+      localStorage.getItem(LOCAL_STORAGE_PLAYLISTS_KEY) ||
+      localStorage.getItem(LEGACY_PLAYLISTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(normalizePlaylistRecord) : [];
+  } catch {
+    return [];
+  }
+}
+
+function updateLocalStorageBackup(playlists: PlaylistRecord[]): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(LOCAL_STORAGE_PLAYLISTS_KEY, JSON.stringify(playlists));
@@ -143,18 +379,12 @@ function updateLocalStorageBackup(playlists: CustomPlaylist[]): void {
   } catch {}
 }
 
-/**
- * Idempotently migrate playlists from localStorage to IndexedDB if DB is empty.
- * Never deletes localStorage data (kept as safety backup).
- */
-export async function migratePlaylistsFromLocalStorage(): Promise<CustomPlaylist[]> {
+export async function migratePlaylistsFromLocalStorage(): Promise<PlaylistRecord[]> {
   const dbPromiseRef = getDB();
   const backup = getLocalStoragePlaylistsBackup();
   const playlistsToSeed = backup.length > 0 ? backup : DEFAULT_PLAYLISTS;
 
-  if (!dbPromiseRef) {
-    return playlistsToSeed;
-  }
+  if (!dbPromiseRef) return playlistsToSeed;
 
   try {
     const db = await dbPromiseRef;
@@ -163,27 +393,22 @@ export async function migratePlaylistsFromLocalStorage(): Promise<CustomPlaylist
 
     if (existing.length === 0) {
       for (const pl of playlistsToSeed) {
-        await tx.store.put(pl);
+        await tx.store.put(normalizePlaylistRecord(pl));
       }
       await tx.done;
       updateLocalStorageBackup(playlistsToSeed);
       return playlistsToSeed;
     }
-    return existing;
+    return existing.map(normalizePlaylistRecord);
   } catch (err) {
     console.warn("Error migrating playlists to IndexedDB:", err);
     return playlistsToSeed;
   }
 }
 
-/**
- * Fetch all custom playlists from IndexedDB with transparent fallback and migration.
- */
-export async function getAllPlaylists(): Promise<CustomPlaylist[]> {
+export async function getAllPlaylists(): Promise<PlaylistRecord[]> {
   const dbPromiseRef = getDB();
-  if (!dbPromiseRef) {
-    return getLocalStoragePlaylistsBackup();
-  }
+  if (!dbPromiseRef) return getLocalStoragePlaylistsBackup();
 
   try {
     const db = await dbPromiseRef;
@@ -191,52 +416,44 @@ export async function getAllPlaylists(): Promise<CustomPlaylist[]> {
     if (all.length === 0) {
       return await migratePlaylistsFromLocalStorage();
     }
-    return all;
+    return all.map(normalizePlaylistRecord);
   } catch (err) {
     console.warn("Failed to read playlists from IndexedDB, using backup:", err);
     return getLocalStoragePlaylistsBackup();
   }
 }
 
-/**
- * Save or update a single playlist.
- */
-export async function savePlaylist(playlist: CustomPlaylist): Promise<void> {
+export async function savePlaylist(playlist: PlaylistRecord): Promise<void> {
+  const normalized = normalizePlaylistRecord(playlist);
   const dbPromiseRef = getDB();
   if (dbPromiseRef) {
     try {
       const db = await dbPromiseRef;
-      await db.put("playlists", {
-        ...playlist,
-        updatedAt: Date.now(),
-      });
+      await db.put("playlists", { ...normalized, updatedAt: Date.now() });
     } catch (e) {
       console.warn("IndexedDB savePlaylist failed:", e);
     }
   }
 
-  // Also update localStorage backup
   const all = getLocalStoragePlaylistsBackup();
-  const idx = all.findIndex((p) => p.id === playlist.id);
+  const idx = all.findIndex((p) => p.id === normalized.id);
   if (idx >= 0) {
-    all[idx] = playlist;
+    all[idx] = normalized;
   } else {
-    all.push(playlist);
+    all.push(normalized);
   }
   updateLocalStorageBackup(all);
 }
 
-/**
- * Save all playlists (bulk sync).
- */
-export async function saveAllPlaylists(playlists: CustomPlaylist[]): Promise<void> {
+export async function saveAllPlaylists(playlists: PlaylistRecord[]): Promise<void> {
+  const normalizedList = playlists.map(normalizePlaylistRecord);
   const dbPromiseRef = getDB();
   if (dbPromiseRef) {
     try {
       const db = await dbPromiseRef;
       const tx = db.transaction("playlists", "readwrite");
       await tx.store.clear();
-      for (const pl of playlists) {
+      for (const pl of normalizedList) {
         await tx.store.put({ ...pl, updatedAt: Date.now() });
       }
       await tx.done;
@@ -244,12 +461,9 @@ export async function saveAllPlaylists(playlists: CustomPlaylist[]): Promise<voi
       console.warn("IndexedDB saveAllPlaylists failed:", e);
     }
   }
-  updateLocalStorageBackup(playlists);
+  updateLocalStorageBackup(normalizedList);
 }
 
-/**
- * Delete a playlist by ID.
- */
 export async function deletePlaylist(id: string): Promise<void> {
   const dbPromiseRef = getDB();
   if (dbPromiseRef) {
@@ -264,28 +478,65 @@ export async function deletePlaylist(id: string): Promise<void> {
   updateLocalStorageBackup(all);
 }
 
-// ── PLAYBACK HISTORY REPOSITORY ────────────────────────────────────────────
+// ── PLAYBACK HISTORY & RECENTLY PLAYED ─────────────────────────────────────
 
-const MAX_HISTORY_ITEMS = 100;
+const MAX_HISTORY_ITEMS = 500;
 
 /**
- * Record a played track in the playback history, auto-capping at 100 entries.
+ * Record a played track only after listening for >= 30 seconds OR >= 50% of track duration.
+ * Updates playCounts aggregate and caps history at 500 entries.
  */
-export async function addHistoryEntry(track: FileInfo): Promise<void> {
+export async function recordPlayHistory(
+  trackId: string,
+  listenedSec: number,
+  durationSec: number,
+  trackInfo?: FileInfo,
+): Promise<boolean> {
+  // Check qualification
+  const isQualified =
+    listenedSec >= 30 || (durationSec > 0 && listenedSec >= durationSec * 0.5);
+
+  if (!isQualified) {
+    return false;
+  }
+
   const dbPromiseRef = getDB();
-  if (!dbPromiseRef) return;
+  if (!dbPromiseRef) return false;
 
   try {
     const db = await dbPromiseRef;
     const now = Date.now();
-    await db.put("history", { timestamp: now, track });
+    const completed = durationSec > 0 && listenedSec >= durationSec * 0.9;
 
-    // Clean up oldest items if exceeding cap
+    // 1. If trackInfo provided, ensure track is cached in tracks store
+    if (trackInfo) {
+      const tr = fileInfoToTrackRecord(trackInfo);
+      await db.put("tracks", tr);
+    }
+
+    // 2. Add entry to history
+    await db.add("history", {
+      trackId,
+      playedAt: now,
+      listenedSec,
+      completed,
+      track: trackInfo,
+      timestamp: now,
+    });
+
+    // 3. Update aggregate playCounts
+    const existingCount = await db.get("playCounts", trackId);
+    await db.put("playCounts", {
+      trackId,
+      count: (existingCount?.count || 0) + 1,
+      lastPlayedAt: now,
+    });
+
+    // 4. Cap history store at MAX_HISTORY_ITEMS (500)
     const count = await db.count("history");
     if (count > MAX_HISTORY_ITEMS) {
       const tx = db.transaction("history", "readwrite");
-      const index = tx.store.index("by-timestamp");
-      let cursor = await index.openCursor();
+      let cursor = await tx.store.openCursor();
       let toDelete = count - MAX_HISTORY_ITEMS;
       while (cursor && toDelete > 0) {
         await cursor.delete();
@@ -294,21 +545,126 @@ export async function addHistoryEntry(track: FileInfo): Promise<void> {
       }
       await tx.done;
     }
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("ytdl_history_updated"));
+    }
+    return true;
   } catch (err) {
-    console.warn("Failed to write history to IndexedDB:", err);
+    console.warn("Failed to record play history:", err);
+    return false;
   }
 }
 
+// Legacy alias used by existing components
+export async function addHistoryEntry(track: FileInfo): Promise<void> {
+  const tr = fileInfoToTrackRecord(track);
+  await recordPlayHistory(tr.id, 30, tr.durationSec, track);
+}
+
 /**
- * Retrieve playback history entries, sorted from newest to oldest.
+ * Retrieve de-duplicated "Recently Played" tracks (last unique tracks, max 50).
  */
-export async function getHistoryEntries(limit = 50): Promise<HistoryRecord[]> {
+export async function getRecentlyPlayedTracks(limit = 50): Promise<TrackRecord[]> {
   const dbPromiseRef = getDB();
   if (!dbPromiseRef) return [];
 
   try {
     const db = await dbPromiseRef;
-    const index = db.transaction("history").store.index("by-timestamp");
+    const historyTx = db.transaction("history", "readonly");
+    const index = historyTx.store.index("by-playedAt");
+    const seenTrackIds = new Set<string>();
+    const orderedTrackIds: string[] = [];
+
+    let cursor = await index.openCursor(null, "prev");
+    while (cursor && orderedTrackIds.length < limit) {
+      const tid = cursor.value.trackId;
+      if (tid && !seenTrackIds.has(tid)) {
+        seenTrackIds.add(tid);
+        orderedTrackIds.push(tid);
+      }
+      cursor = await cursor.continue();
+    }
+
+    if (orderedTrackIds.length === 0) return [];
+
+    // Fetch TrackRecords
+    const tracksTx = db.transaction("tracks", "readonly");
+    const results: TrackRecord[] = [];
+    for (const tid of orderedTrackIds) {
+      const tr = await tracksTx.store.get(tid);
+      if (tr) {
+        results.push(tr);
+      } else {
+        // Fallback placeholder
+        results.push({
+          id: tid,
+          title: tid.startsWith("lib:") ? tid.replace(/^lib:/, "") : tid,
+          artist: "Unknown Artist",
+          durationSec: 0,
+          source: tid.startsWith("lib:") ? "library" : "youtube",
+          addedAt: Date.now(),
+        });
+      }
+    }
+    return results;
+  } catch (err) {
+    console.warn("Failed to get recently played tracks:", err);
+    return [];
+  }
+}
+
+/**
+ * Retrieve "Most Played" tracks sorted by play count.
+ */
+export async function getMostPlayedTracks(limit = 50): Promise<{ track: TrackRecord; count: number }[]> {
+  const dbPromiseRef = getDB();
+  if (!dbPromiseRef) return [];
+
+  try {
+    const db = await dbPromiseRef;
+    const allCounts = await db.getAll("playCounts");
+    allCounts.sort((a, b) => b.count - a.count);
+
+    const top = allCounts.slice(0, limit);
+    const results: { track: TrackRecord; count: number }[] = [];
+
+    const tracksTx = db.transaction("tracks", "readonly");
+    for (const item of top) {
+      const tr = await tracksTx.store.get(item.trackId);
+      if (tr) {
+        results.push({ track: tr, count: item.count });
+      } else {
+        results.push({
+          track: {
+            id: item.trackId,
+            title: item.trackId.startsWith("lib:") ? item.trackId.replace(/^lib:/, "") : item.trackId,
+            artist: "Unknown Artist",
+            durationSec: 0,
+            source: item.trackId.startsWith("lib:") ? "library" : "youtube",
+            addedAt: Date.now(),
+          },
+          count: item.count,
+        });
+      }
+    }
+    return results;
+  } catch (err) {
+    console.warn("Failed to get most played tracks:", err);
+    return [];
+  }
+}
+
+/**
+ * Retrieve raw playback history log entries (sorted newest to oldest).
+ */
+export async function getHistoryEntries(limit = 100): Promise<HistoryRecord[]> {
+  const dbPromiseRef = getDB();
+  if (!dbPromiseRef) return [];
+
+  try {
+    const db = await dbPromiseRef;
+    const index = db.transaction("history").store.index("by-playedAt");
     const results: HistoryRecord[] = [];
     let cursor = await index.openCursor(null, "prev");
     while (cursor && results.length < limit) {
@@ -317,28 +673,141 @@ export async function getHistoryEntries(limit = 50): Promise<HistoryRecord[]> {
     }
     return results;
   } catch (err) {
-    console.warn("Failed to fetch history from IndexedDB:", err);
+    console.warn("Failed to fetch history entries:", err);
     return [];
   }
 }
 
-/**
- * Clear all playback history.
- */
 export async function clearHistory(): Promise<void> {
   const dbPromiseRef = getDB();
   if (!dbPromiseRef) return;
   try {
     const db = await dbPromiseRef;
     await db.clear("history");
+    await db.clear("playCounts");
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("ytdl_history_updated"));
+    }
   } catch {}
 }
 
-// ── SETTINGS REPOSITORY ────────────────────────────────────────────────────
+export async function deleteHistoryEntry(key: number): Promise<void> {
+  const dbPromiseRef = getDB();
+  if (!dbPromiseRef) return;
+  try {
+    const db = await dbPromiseRef;
+    await db.delete("history", key);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("ytdl_history_updated"));
+    }
+  } catch {}
+}
 
-/**
- * Read setting from IndexedDB with fallback to defaultValue.
- */
+// ── LIKED TRACKS REPOSITORY ────────────────────────────────────────────────
+
+export async function isTrackLiked(trackId: string): Promise<boolean> {
+  const dbPromiseRef = getDB();
+  if (!dbPromiseRef) return false;
+  try {
+    const db = await dbPromiseRef;
+    const record = await db.get("likedTracks", trackId);
+    return !!record;
+  } catch {
+    return false;
+  }
+}
+
+export async function toggleLikeTrack(trackId: string, trackInfo?: FileInfo): Promise<boolean> {
+  const dbPromiseRef = getDB();
+  if (!dbPromiseRef) return false;
+  try {
+    const db = await dbPromiseRef;
+    const existing = await db.get("likedTracks", trackId);
+    if (existing) {
+      await db.delete("likedTracks", trackId);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("ytdl_liked_changed", { detail: { trackId, liked: false } }));
+      }
+      return false;
+    } else {
+      if (trackInfo) {
+        await db.put("tracks", fileInfoToTrackRecord(trackInfo));
+      }
+      await db.put("likedTracks", { trackId, likedAt: Date.now() });
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("ytdl_liked_changed", { detail: { trackId, liked: true } }));
+      }
+      return true;
+    }
+  } catch {
+    return false;
+  }
+}
+
+export async function getLikedTracks(): Promise<TrackRecord[]> {
+  const dbPromiseRef = getDB();
+  if (!dbPromiseRef) return [];
+  try {
+    const db = await dbPromiseRef;
+    const all = await db.getAll("likedTracks");
+    all.sort((a, b) => b.likedAt - a.likedAt);
+
+    const tracksTx = db.transaction("tracks", "readonly");
+    const results: TrackRecord[] = [];
+    for (const item of all) {
+      const tr = await tracksTx.store.get(item.trackId);
+      if (tr) results.push(tr);
+    }
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+// ── YOUTUBE PLAYLIST IMPORT & REFRESH ──────────────────────────────────────
+
+export async function importYouTubePlaylist(
+  info: PlaylistInfoResponse,
+  sourceUrl?: string,
+): Promise<PlaylistRecord> {
+  const trackIds: string[] = [];
+  const dbPromiseRef = getDB();
+
+  for (const item of info.videos) {
+    if (!item.video_id) continue;
+    trackIds.push(item.video_id);
+    const tr: TrackRecord = {
+      id: item.video_id,
+      title: item.title,
+      artist: info.uploader || "YouTube Music",
+      durationSec: typeof item.duration === "number" ? item.duration : 0,
+      thumbnailUrl: item.thumbnail,
+      source: "youtube",
+      addedAt: Date.now(),
+    };
+    if (dbPromiseRef) {
+      await upsertTrack(tr);
+    }
+  }
+
+  const playlist: PlaylistRecord = {
+    id: `yt_${info.playlist_id}`,
+    name: info.title || "Imported YouTube Playlist",
+    kind: "youtube-import",
+    sourceUrl: sourceUrl || `https://www.youtube.com/playlist?list=${info.playlist_id}`,
+    trackIds,
+    songFilenames: trackIds,
+    coverTrackId: trackIds[0],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+
+  await savePlaylist(playlist);
+  return playlist;
+}
+
+// ── PLAYER STATE & SETTINGS ────────────────────────────────────────────────
+
 export async function getSetting<T>(key: string, defaultValue: T): Promise<T> {
   const dbPromiseRef = getDB();
   if (!dbPromiseRef) return defaultValue;
@@ -353,9 +822,6 @@ export async function getSetting<T>(key: string, defaultValue: T): Promise<T> {
   return defaultValue;
 }
 
-/**
- * Write setting to IndexedDB.
- */
 export async function setSetting<T>(key: string, value: T): Promise<void> {
   const dbPromiseRef = getDB();
   if (!dbPromiseRef) return;
@@ -370,11 +836,16 @@ export async function setSetting<T>(key: string, value: T): Promise<void> {
   } catch {}
 }
 
+export async function savePersistedPlayerState(state: PersistedPlayerState): Promise<void> {
+  await setSetting("playerState", state);
+}
+
+export async function getPersistedPlayerState(): Promise<PersistedPlayerState | null> {
+  return await getSetting<PersistedPlayerState | null>("playerState", null);
+}
+
 // ── OFFLINE TRACKS REPOSITORY ──────────────────────────────────────────────
 
-/**
- * Save an offline track (audio blob + metadata) to IndexedDB.
- */
 export async function saveOfflineTrack(record: OfflineTrackRecord): Promise<void> {
   const dbPromiseRef = getDB();
   if (!dbPromiseRef) throw new Error("IndexedDB is not available in this browser environment");
@@ -386,9 +857,6 @@ export async function saveOfflineTrack(record: OfflineTrackRecord): Promise<void
   }
 }
 
-/**
- * Get an offline track by its ID.
- */
 export async function getOfflineTrack(id: string): Promise<OfflineTrackRecord | undefined> {
   const dbPromiseRef = getDB();
   if (!dbPromiseRef) return undefined;
@@ -396,9 +864,6 @@ export async function getOfflineTrack(id: string): Promise<OfflineTrackRecord | 
   return db.get("offlineTracks", id);
 }
 
-/**
- * Get an offline track by its filename.
- */
 export async function getOfflineTrackByFilename(filename: string): Promise<OfflineTrackRecord | undefined> {
   const dbPromiseRef = getDB();
   if (!dbPromiseRef) return undefined;
@@ -406,9 +871,6 @@ export async function getOfflineTrackByFilename(filename: string): Promise<Offli
   return db.getFromIndex("offlineTracks", "by-filename", filename);
 }
 
-/**
- * Retrieve all offline tracks stored in IndexedDB.
- */
 export async function getAllOfflineTracks(): Promise<OfflineTrackRecord[]> {
   const dbPromiseRef = getDB();
   if (!dbPromiseRef) return [];
@@ -420,9 +882,6 @@ export async function getAllOfflineTracks(): Promise<OfflineTrackRecord[]> {
   }
 }
 
-/**
- * Delete an offline track by ID.
- */
 export async function deleteOfflineTrack(id: string): Promise<void> {
   const dbPromiseRef = getDB();
   if (!dbPromiseRef) return;
@@ -433,9 +892,6 @@ export async function deleteOfflineTrack(id: string): Promise<void> {
   }
 }
 
-/**
- * Remove all saved offline tracks from IndexedDB.
- */
 export async function clearAllOfflineTracks(): Promise<void> {
   const dbPromiseRef = getDB();
   if (!dbPromiseRef) return;
@@ -446,9 +902,6 @@ export async function clearAllOfflineTracks(): Promise<void> {
   }
 }
 
-/**
- * Check total offline storage usage and track count.
- */
 export async function getOfflineStorageUsage(): Promise<{ count: number; totalBytes: number }> {
   const dbPromiseRef = getDB();
   if (!dbPromiseRef) return { count: 0, totalBytes: 0 };
@@ -462,9 +915,6 @@ export async function getOfflineStorageUsage(): Promise<{ count: number; totalBy
   }
 }
 
-/**
- * Check browser storage quota and usage via navigator.storage.estimate().
- */
 export async function getStorageQuotaEstimate(): Promise<{
   quotaBytes: number;
   usageBytes: number;
@@ -482,16 +932,13 @@ export async function getStorageQuotaEstimate(): Promise<{
   return { quotaBytes: 0, usageBytes: 0, percentUsed: 0 };
 }
 
-// ── PLAYLIST IMPORT / EXPORT ───────────────────────────────────────────────
+// ── PLAYLIST EXPORT / IMPORT ───────────────────────────────────────────────
 
-/**
- * Export all playlists as a JSON string for user backup.
- */
 export async function exportPlaylistsAsJson(): Promise<string> {
   const playlists = await getAllPlaylists();
   return JSON.stringify(
     {
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       playlists,
     },
@@ -500,23 +947,21 @@ export async function exportPlaylistsAsJson(): Promise<string> {
   );
 }
 
-/**
- * Import playlists from JSON string. Merges with existing or adds newly.
- */
 export async function importPlaylistsFromJson(jsonString: string): Promise<{ imported: number }> {
   const parsed = JSON.parse(jsonString);
-  const items: CustomPlaylist[] = Array.isArray(parsed) ? parsed : parsed.playlists;
+  const items: PlaylistRecord[] = Array.isArray(parsed) ? parsed : parsed.playlists;
   if (!Array.isArray(items)) {
     throw new Error("Invalid playlist backup format: missing playlists array");
   }
 
   const existing = await getAllPlaylists();
-  const map = new Map<string, CustomPlaylist>(existing.map((p) => [p.id, p]));
+  const map = new Map<string, PlaylistRecord>(existing.map((p) => [p.id, p]));
 
   let count = 0;
   for (const item of items) {
-    if (item.id && item.name && Array.isArray(item.songFilenames)) {
-      map.set(item.id, item);
+    if (item.id && item.name) {
+      const norm = normalizePlaylistRecord(item);
+      map.set(item.id, norm);
       count++;
     }
   }
@@ -533,7 +978,6 @@ export type StreamingQualitySetting = "auto" | "compatible" | "saver";
 let cachedQualitySetting: StreamingQualitySetting = "auto";
 
 if (typeof window !== "undefined") {
-  // Prime cached setting on client load
   setTimeout(() => {
     getStreamingQualitySetting().then((q) => {
       cachedQualitySetting = q;
@@ -544,16 +988,10 @@ if (typeof window !== "undefined") {
   }) as EventListener);
 }
 
-/**
- * Return in-memory cached streaming quality setting (synchronous).
- */
 export function getCurrentStreamingQuality(): StreamingQualitySetting {
   return cachedQualitySetting;
 }
 
-/**
- * Detect browser opus in webm container support using Audio.canPlayType.
- */
 export function isOpusSupported(): boolean {
   if (typeof window === "undefined" || typeof Audio === "undefined") {
     return false;
@@ -567,9 +1005,6 @@ export function isOpusSupported(): boolean {
   }
 }
 
-/**
- * Retrieve current user streaming quality setting from IndexedDB (defaults to "auto").
- */
 export async function getStreamingQualitySetting(): Promise<StreamingQualitySetting> {
   const dbPromiseRef = getDB();
   if (!dbPromiseRef) return "auto";
@@ -583,9 +1018,6 @@ export async function getStreamingQualitySetting(): Promise<StreamingQualitySett
   return "auto";
 }
 
-/**
- * Save user streaming quality setting to IndexedDB.
- */
 export async function setStreamingQualitySetting(quality: StreamingQualitySetting): Promise<void> {
   const dbPromiseRef = getDB();
   if (!dbPromiseRef) return;
@@ -598,11 +1030,6 @@ export async function setStreamingQualitySetting(quality: StreamingQualitySettin
   } catch {}
 }
 
-/**
- * Determine effective streaming quality query parameter to send to the backend.
- * If user set "auto", checks browser opus support and sends "auto" if supported,
- * or "compatible" if not supported (e.g. older iOS Safari).
- */
 export function getEffectiveStreamingQuality(setting: StreamingQualitySetting = "auto"): "auto" | "compatible" | "saver" {
   if (setting === "compatible") return "compatible";
   if (setting === "saver") return "saver";

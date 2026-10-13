@@ -8,6 +8,9 @@ interface MiniPlayerBarProps {
   isPlaying: boolean;
   onTogglePlayPause: () => void;
   onOpenPlayer: () => void;
+  onPlayNext?: () => void;
+  onPlayPrev?: () => void;
+  progressPercent?: number;
 }
 
 export function MiniPlayerBar({
@@ -15,6 +18,9 @@ export function MiniPlayerBar({
   isPlaying,
   onTogglePlayPause,
   onOpenPlayer,
+  onPlayNext,
+  onPlayPrev,
+  progressPercent = 0,
 }: MiniPlayerBarProps) {
   const { config } = useTheme();
   if (!currentFile) return null;
@@ -22,13 +28,24 @@ export function MiniPlayerBar({
   return (
     <div
       onClick={onOpenPlayer}
-      className="fixed bottom-16 left-3 right-3 z-40 md:bottom-6 md:right-6 md:left-auto md:w-80 bg-zinc-950/95 backdrop-blur-2xl border rounded-2xl p-2.5 shadow-2xl flex items-center justify-between gap-3 cursor-pointer transition-all group animate-in slide-in-from-bottom-3 duration-300"
+      className="fixed bottom-16 left-3 right-3 z-40 md:bottom-6 md:right-6 md:left-auto md:w-84 bg-zinc-950/95 backdrop-blur-2xl border rounded-2xl p-2.5 shadow-2xl flex items-center justify-between gap-3 cursor-pointer transition-all group animate-in slide-in-from-bottom-3 duration-300 relative overflow-hidden"
       style={{
         borderColor: `${config.primaryHex}35`,
         boxShadow: `0 10px 30px -5px ${config.glow}, 0 20px 25px -5px rgba(0, 0, 0, 0.8)`,
       }}
       title="Tap to open full player"
     >
+      {/* Top progress bar line */}
+      <div className="absolute top-0 left-0 right-0 h-0.5 bg-white/10">
+        <div
+          className="h-full transition-all duration-300"
+          style={{
+            width: `${Math.max(0, Math.min(100, progressPercent))}%`,
+            backgroundColor: config.primaryHex,
+          }}
+        />
+      </div>
+
       <div className="flex items-center gap-3 min-w-0 flex-1">
         {/* Thumbnail */}
         <div className="relative w-10 h-10 rounded-xl overflow-hidden bg-zinc-900 shrink-0 border border-white/10 shadow">
@@ -64,13 +81,31 @@ export function MiniPlayerBar({
           <h4 className="text-xs font-semibold text-white truncate group-hover:text-zinc-200 transition-colors">
             {currentFile.clean_title}
           </h4>
+          {currentFile.artist && (
+            <p className="text-[10px] text-zinc-400 truncate">{currentFile.artist}</p>
+          )}
         </div>
       </div>
 
       {/* Action Buttons */}
       <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+        {/* Prev Track */}
+        {onPlayPrev && (
+          <button
+            type="button"
+            onClick={onPlayPrev}
+            className="w-7 h-7 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 flex items-center justify-center transition-colors active:scale-90"
+            title="Previous Track"
+          >
+            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+              <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+            </svg>
+          </button>
+        )}
+
         {/* Play/Pause Button */}
         <button
+          type="button"
           onClick={onTogglePlayPause}
           className="w-9 h-9 rounded-full text-white flex items-center justify-center shadow-lg active:scale-90 transition-all"
           style={{
@@ -90,10 +125,25 @@ export function MiniPlayerBar({
           )}
         </button>
 
+        {/* Next Track */}
+        {onPlayNext && (
+          <button
+            type="button"
+            onClick={onPlayNext}
+            className="w-7 h-7 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 flex items-center justify-center transition-colors active:scale-90"
+            title="Next Track"
+          >
+            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+              <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+            </svg>
+          </button>
+        )}
+
         {/* Expand into full player */}
         <button
+          type="button"
           onClick={onOpenPlayer}
-          className="w-8 h-8 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
+          className="w-7 h-7 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
           title="Open Player"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

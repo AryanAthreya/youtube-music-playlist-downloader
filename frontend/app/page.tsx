@@ -20,6 +20,7 @@ import { ThemeProvider, useTheme } from "@/context/ThemeContext";
 import { fetchInfo, searchYouTube, createDownload, deleteJob, getFileUrl, getFiles, getJobStatus, getStreamUrl } from "@/lib/api";
 import { getSetting, setSetting } from "@/lib/db";
 import { createJobWebSocket } from "@/lib/websocket";
+import { useMusicPlayer } from "@/lib/player/useMusicPlayer";
 import type {
   InfoResponse,
   VideoInfoResponse,
@@ -43,6 +44,7 @@ type AppState =
 
 function HomePageContent() {
   const { config } = useTheme();
+  const player = useMusicPlayer();
   const [activeTab, setActiveTab] = useState<"downloader" | "history" | "playlists" | "player">("downloader");
   const [state, setState] = useState<AppState>({ phase: "idle" });
   const [wsHandle, setWsHandle] = useState<{ close: () => void } | null>(null);
@@ -62,6 +64,13 @@ function HomePageContent() {
   } | null>(null);
   const autoDownloadedJobRef = useRef<string | null>(null);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+
+  // Sync player track changes from hook (e.g. queue auto-advance, keyboard shortcuts)
+  useEffect(() => {
+    if (player.currentTrack) {
+      setCurrentPlayingFile(player.currentTrack);
+    }
+  }, [player.currentTrack]);
 
   useEffect(() => {
     try {
@@ -189,6 +198,7 @@ function HomePageContent() {
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handlePlayTrack = (file: FileInfo, queue?: FileInfo[], playlistName?: string) => {
+    const q = queue && queue.length > 0 ? queue : (playerQueue.length > 0 ? playerQueue : allDownloadedFiles);
     if (queue && queue.length > 0) {
       setPlayerQueue(queue);
     }
@@ -197,6 +207,7 @@ function HomePageContent() {
     }
     setCurrentPlayingFile(file);
     setIsPlayerPlaying(true);
+    player.playTrack(file, q);
   };
 
   const handlePlayYouTubePreview = useCallback((item: SearchResultItem) => {
@@ -241,7 +252,8 @@ function HomePageContent() {
       return [...prev, streamTrack];
     });
     setIsPlayerPlaying(true);
-  }, []);
+    player.playTrack(streamTrack, [streamTrack]);
+  }, [player]);
 
   const handleStreamVideoInfo = useCallback((info: VideoInfoResponse) => {
     const streamTrack: FileInfo = {
@@ -267,7 +279,8 @@ function HomePageContent() {
       return [...prev, streamTrack];
     });
     setIsPlayerPlaying(true);
-  }, []);
+    player.playTrack(streamTrack, [streamTrack]);
+  }, [player]);
 
   const handleStreamPlayTrack = useCallback((video: PlaylistVideoItem) => {
     const streamTrack: FileInfo = {
@@ -292,7 +305,8 @@ function HomePageContent() {
       return [...prev, streamTrack];
     });
     setIsPlayerPlaying(true);
-  }, []);
+    player.playTrack(streamTrack, [streamTrack]);
+  }, [player]);
 
   const handleStreamPlaylist = useCallback(
     (videos: PlaylistVideoItem[], startIndex = 0) => {
@@ -320,8 +334,9 @@ function HomePageContent() {
       setPlayerQueue(queue);
       setCurrentPlayingFile(startTrack);
       setIsPlayerPlaying(true);
+      player.playTrack(startTrack, queue, startIndex);
     },
-    [state],
+    [state, player],
   );
 
   const handlePlayNext = () => {
@@ -835,12 +850,37 @@ function HomePageContent() {
               allFiles={allDownloadedFiles}
               playlist={playerQueue.length > 0 ? playerQueue : allDownloadedFiles}
               playlistName={activePlaylistName}
-              onSelectTrack={(file) => setCurrentPlayingFile(file)}
-              onPlayNext={handlePlayNext}
-              onPlayPrev={handlePlayPrev}
+              onSelectTrack={(file) => {
+                setCurrentPlayingFile(file);
+                player.playTrack(file, playerQueue.length > 0 ? playerQueue : allDownloadedFiles);
+              }}
+              onPlayNext={() => {
+                player.playNext();
+                handlePlayNext();
+              }}
+              onPlayPrev={() => {
+                player.playPrev();
+                handlePlayPrev();
+              }}
               onGoToHistory={() => setActiveTab("history")}
               onPlaybackStateChange={(playing) => setIsPlayerPlaying(playing)}
               onControlsVisibilityChange={(visible) => setIsBigControlsVisible(visible)}
+              repeatMode={player.repeatMode}
+              isShuffle={player.isShuffle}
+              isLiked={player.isLiked}
+              onToggleRepeat={player.toggleRepeat}
+              onToggleShuffle={player.toggleShuffle}
+              onToggleLike={player.toggleLike}
+              queueTracks={player.queueTracks.length > 0 ? player.queueTracks : (playerQueue.length > 0 ? playerQueue : allDownloadedFiles)}
+              onReorderQueue={player.reorderQueue}
+              onRemoveFromQueue={(idx) => {
+                const item = player.queue[idx];
+                if (item) player.removeFromQueue(item.qid);
+              }}
+              onClearQueue={player.clearQueue}
+              onSelectQueueIndex={player.jumpToQueueIndex}
+              sleepTimerMode={player.sleepTimerMode}
+              onSetSleepTimer={player.setSleepTimer}
             />
           </div>
         </div>
@@ -854,7 +894,19 @@ function HomePageContent() {
           <MiniPlayerBar
             currentFile={currentPlayingFile}
             isPlaying={isPlayerPlaying}
-            onTogglePlayPause={() => playerHandleRef.current?.togglePlayPause()}
+            onTogglePlayPause={() => {
+              playerHandleRef.current?.togglePlayPause();
+              player.togglePlayPause();
+            }}
+            onPlayNext={() => {
+              player.playNext();
+              handlePlayNext();
+            }}
+            onPlayPrev={() => {
+              player.playPrev();
+              handlePlayPrev();
+            }}
+            progressPercent={player.duration > 0 ? (player.currentTime / player.duration) * 100 : undefined}
             onOpenPlayer={() => {
               if (activeTab === "player") {
                 window.scrollTo({ top: 0, behavior: "smooth" });

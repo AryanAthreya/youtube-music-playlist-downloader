@@ -66,6 +66,61 @@
 
 ---
 
+### Phase 2b: Pure Music-Player Engine & Queue Controller
+- [ ] Implement `frontend/lib/player/types.ts`:
+  - [ ] `QueueItem` ({ qid, trackId }), `RepeatMode` ("off" | "all" | "one"), `PersistedPlayerState`
+- [ ] Implement `frontend/lib/player/queue.ts` (pure framework-agnostic queue engine):
+  - [ ] `play`, `playNow`, `playNext`, `addToQueue`, `remove`, `clear`, `move`, `jumpToIndex`
+  - [ ] Fisher-Yates shuffle with current track pinned and `originalOrder` restoration
+  - [ ] Shuffle `historyStack` for previous navigation
+  - [ ] Repeat modes (`off`, `all`, `one`) with autoplay vs manual next handling
+  - [ ] Previous track logic (restart if >3s, else go to previous)
+  - [ ] State serialization and restoration
+- [ ] Write unit tests in `frontend/lib/player/queue.test.ts`:
+  - [ ] Shuffle with original order restoration
+  - [ ] Repeat modes (off/all/one) and boundary wrapping
+  - [ ] Previous restart (>3s) vs advance
+  - [ ] Reorder, remove-current, and queue restore
+- [ ] Run queue unit tests with `node --test` and verify 100% pass
+- [ ] Implement `frontend/lib/player/audioController.ts` & `useMusicPlayer`:
+  - [ ] Single persistent audio element + hidden secondary warmup preload audio element
+  - [ ] Next track preloading at ~75% or <20s remaining (disabled when offline or on data-saver)
+  - [ ] Listen time qualification tracker (>=30s or >=50% duration)
+  - [ ] Long track resume position saving for tracks >10 min
+  - [ ] Sleep timer (15, 30, 60 min, end of track) with 5s fade-out
+  - [ ] Media Session API updates (`setPositionState`, lock-screen scrubbing, play/pause/prev/next/seek)
+  - [ ] Desktop keyboard shortcuts (Space, Left/Right seek, Shift+Left/Right track, M mute)
+  - [ ] Stale stream retry once (`?retry=1`) and 3-consecutive-error auto-skip limit
+
+---
+
+### Phase 3b: Extended IndexedDB Data Model, Smart Playlists & UI
+- [ ] Update `frontend/lib/db.ts` to `DB_VERSION = 2`:
+  - [ ] New/updated stores: `tracks`, `playlists` (with `kind` and `trackIds`), `history` (auto key), `playCounts`, `likedTracks`
+  - [ ] Idempotent migration from v1 `CustomPlaylist` to v2 `PlaylistRecord` mapping to `lib:<filename>`
+  - [ ] History qualification: record only when listened >=30s or >=50%
+  - [ ] Capped history log (max 500 entries) with de-duplicated **Recently Played** (last 50 unique tracks)
+  - [ ] Aggregate **Most Played** query from `playCounts`
+  - [ ] **Liked Songs** toggle and query
+  - [ ] YouTube playlist import and refresh via `/api/info`
+- [ ] Minimal UI updates in `frontend/components/NowPlayingSection.tsx`:
+  - [ ] Preserve existing props (`currentFile`, `playlist`, `allFiles`, etc.)
+  - [ ] 3-state Repeat button, Shuffle button, Like heart button, Sleep timer menu
+  - [ ] Touch-friendly slide-over Queue Drawer ("Now Playing" + "Up Next" with drag/pointer reorder, remove, clear)
+- [ ] Minimal UI updates in `frontend/components/MiniPlayerBar.tsx`:
+  - [ ] Add compact Prev & Next buttons and top edge progress line
+- [ ] Minimal UI updates in `frontend/components/PlaylistsSection.tsx`:
+  - [ ] Smart Playlists section: **Recently Played**, **Most Played**, **Liked Songs**, **Saved Offline**
+  - [ ] YouTube import badge, "Refresh Playlist" action, track reordering
+- [ ] Minimal UI updates in `frontend/app/page.tsx`:
+  - [ ] Sync shared queue state while preserving Downloader tab and existing flows
+- [ ] Run full test suites:
+  - [ ] Unit tests for queue and history logic pass
+  - [ ] All backend tests pass (`python -m pytest backend/tests`)
+  - [ ] `npm --prefix frontend run build` passes with zero type errors
+
+---
+
 ### Phase 4: PWA (Manifest & Hand-Written Service Worker)
 - [x] Create `frontend/app/manifest.ts` (Next.js metadata route)
 - [x] Generate real PWA icon assets (192x192, 512x512, maskable) into `frontend/public/icons/`
@@ -151,6 +206,53 @@
 - [x] Created PowerShell helper `scripts/lan-up.ps1` (detects LAN IP, checks firewall, starts stack, tests health)
 - [x] Created `scripts/lan-down.ps1` (stops stack)
 - [x] Documented LAN phone testing, HTTPS limitations, and troubleshooting in `README.md`
+
+---
+
+### Phase 2b: Pure Queue Engine & Audio Playback Controller
+- [x] Create pure, framework-agnostic `QueueEngine` (`frontend/lib/player/queue.ts`):
+  - [x] Queue items with stable UUIDs (`QueueItem { qid, trackId }`)
+  - [x] Fisher-Yates shuffle pinning current track with `originalOrder` restoration
+  - [x] Shuffle history stack for deterministic `prev`
+  - [x] 3-state repeat modes: `off`, `all`, `one`
+  - [x] `playNow`, `playNext`, `addToQueue`, `remove`, `move`, `jumpToIndex`
+  - [x] Unit test suite (`frontend/lib/player/queue.test.ts`, 11/11 tests pass)
+- [x] Create persistent `AudioController` (`frontend/lib/player/audioController.ts`):
+  - [x] Single persistent `HTMLAudioElement` for uninterrupted playback across tab switches
+  - [x] Secondary preloader (`preload="metadata"` at ~75% or <20s remaining, disabled on saver/offline)
+  - [x] Three-tier source resolution: Ephemeral Offline Blob -> Library File -> Stream Proxy
+  - [x] Listen-time qualification (>=30s or >=50% of track)
+  - [x] Long-track position resume memory (>10 min)
+  - [x] Sleep timer (15, 30, 60 min, track end) with 5s smooth fade-out
+  - [x] Media Session API metadata & lockscreen scrubbing
+  - [x] Automatic stale stream recovery (`?retry=1`)
+- [x] Create `useMusicPlayer` hook (`frontend/lib/player/useMusicPlayer.ts`):
+  - [x] Connects `QueueEngine` & `AudioController` with reactive React state
+  - [x] Throttled persistence to IndexedDB (saved every ~5s, restored on app start paused)
+  - [x] Desktop keyboard shortcuts (Space, ArrowLeft/Right, Shift+ArrowLeft/Right, M)
+- [x] MiniPlayerBar & NowPlaying enhancements:
+  - [x] Added `onPlayNext`, `onPlayPrev`, and top progress accent line to `MiniPlayerBar`
+  - [x] Added 3-state repeat, shuffle, like button, sleep timer menu to `NowPlayingSection`
+  - [x] Slide-over touch/pointer `<QueueDrawer />` with reordering, removal, and clear
+
+---
+
+### Phase 3b: Enhanced Playlists & "Recently Played" Engine
+- [x] IndexedDB v2 upgrade in `frontend/lib/db.ts`:
+  - [x] Stores: `tracks`, `playlists` (with `kind` & `trackIds`), `history` (capped at 500), `playCounts`, `likedTracks`
+  - [x] Automated migration from v1 to v2 while preserving backwards compatibility
+  - [x] Unified track conversions (`fileInfoToTrackRecord`, `trackRecordToFileInfo`)
+- [x] Smart Playlists shelf in `PlaylistsSection`:
+  - [x] **Recently Played**: De-duplicated top 50 recent qualified tracks + horizontal carousel
+  - [x] **Most Played**: Top tracks by qualified listen count
+  - [x] **Liked Songs**: Hearted tracks collection
+  - [x] **Saved Offline**: Direct access to cached offline tracks
+- [x] YouTube Playlist Import & Refresh:
+  - [x] Imported playlists marked with YouTube badge
+  - [x] "Refresh Playlist" action calling `/api/info` to discover new additions
+- [x] Seamless Integration in `page.tsx`:
+  - [x] Synchronized `useMusicPlayer` with player and miniplayer
+  - [x] Preserved zero regressions across downloader, history, and theme settings
 
 ---
 
