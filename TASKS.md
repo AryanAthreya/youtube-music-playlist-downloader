@@ -256,6 +256,47 @@
 
 ---
 
+### Phase 8: Playlist Import (CSV / Pasted Text -> YouTube Matching)
+- [x] Backend stateless matching endpoint (`POST /api/import/match`):
+  - [x] Create schemas in `backend/app/schemas/import_match.py` (`MatchItemRequest`, `CandidateMatch`, `ItemMatchResult`, `ImportMatchBatchResponse`)
+  - [x] Implement `backend/app/services/match_service.py`:
+    - [x] String normalization (clean punctuation, "feat.", "ft.", brackets, extra whitespace)
+    - [x] Token overlap scoring between source metadata and candidate YouTube metadata
+    - [x] Duration closeness scoring (+30 within 3s, +20 within 8s, -30 beyond 60s)
+    - [x] Channel and official audio bonuses ("- Topic", VEVO, "Official Audio")
+    - [x] Negative penalties for live/cover/remix/karaoke/8D unless source includes keyword
+    - [x] Score clamping (0-100) and confidence classification (`high`, `medium`, `low`, `none`)
+    - [x] In-memory bounded LRU cache (max 500 items)
+    - [x] Execution on `stream_service._stream_executor` (isolated 2-worker pool, never download pool)
+    - [x] Per-item timeout (8s) and individual exception isolation
+  - [x] Create router in `backend/app/api/import_match.py` and register in `backend/app/main.py`
+  - [x] Add unit tests in `backend/tests/test_match_service.py` (fixtures only, no network calls)
+- [x] Frontend CSV & text parsers:
+  - [x] Create `frontend/lib/importer/csvParser.ts` (BOM-safe, RFC 4180 quotes/commas/semicolons, column auto-detection for Title/Artist/Album/Duration across Spotify/Exportify/TuneMyMusic/Soundiiz)
+  - [x] Add text parser supporting `Artist - Title`, `Title - Artist` (with flip option), and single title per line
+  - [x] Add unit tests in `frontend/lib/importer/csvParser.test.ts`
+- [x] Frontend import modal & review UI:
+  - [x] Create `frontend/components/PlaylistImportModal.tsx` with 3 entry tabs: YouTube URL, CSV File upload, and Paste Text
+  - [x] Batch execution runner: sequential 25-item batches with live progress bar, cancel, and resume
+  - [x] Interactive Review Screen:
+    - [x] Confidence badge filtering (High, Medium, Low, None) with low/none surfaced first
+    - [x] "Select all high-confidence" quick toggle
+    - [x] Per-row actions: audio preview (10s stream), alternate candidate selection, manual search modal, exclude/skip toggle
+  - [x] Confirmation and saving:
+    - [x] Custom playlist name field
+    - [x] Duplicate detection by video ID with merge vs add-all options
+    - [x] Write tracks to IndexedDB `tracks` store and playlist to `playlists` store
+    - [x] Post-import summary report with "Download unmatched.csv" export
+- [x] Integration & Documentation:
+  - [x] Connect Import button in `frontend/components/PlaylistsSection.tsx` to `PlaylistImportModal`
+  - [x] Update `README.md` with an "Import Playlists" guide explaining how to export CSV from Spotify/Apple Music and best-effort matching limitations
+- [x] Verification:
+  - [x] Run backend tests (`pytest backend/tests` - 103/103 passed)
+  - [x] Run frontend unit tests (`npm test` - 18/18 passed)
+  - [x] Run frontend production build (`npm run build` - clean)
+
+---
+
 ## Decisions / Known Issues
 
 1. **Service Worker Strategy**: Hand-written `public/sw.js` chosen over `next-pwa` (unmaintained) and `@serwist/next` (bundler coupling risk with Next.js 16 App Router).

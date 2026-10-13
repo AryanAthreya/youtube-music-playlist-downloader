@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test --experimental-strip-types lib/player/queue.test.ts"
+    "test": "node --test --experimental-strip-types lib/player/queue.test.ts lib/importer/csvParser.test.ts"
   },
   "dependencies": {
     "idb": "^8.0.4",

@@ -18,7 +18,7 @@ import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import download, files, health, info, stream, websocket
+from app.api import download, files, health, import_match, info, stream, websocket
 from app.config import get_settings
 from app.errors.exceptions import register_exception_handlers
 from app.services import file_manager, job_manager, stream_service
@@ -80,6 +80,7 @@ def create_app() -> FastAPI:
     app.include_router(files.router)
     app.include_router(stream.router)
     app.include_router(websocket.router)
+    app.include_router(import_match.router)
 
     # ── Lifecycle events ──────────────────────────────────────────────────
     @app.on_event("startup")

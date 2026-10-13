@@ -149,9 +149,28 @@ Caddy Reverse Proxy (Auto TLS / DuckDNS HTTP Challenge)
 | `GET` | `/api/files` | List all files in `completed/` (disk-backed) |
 | `GET` | `/api/files/{filename}` | Stream / download file by filename |
 | `DELETE` | `/api/files/{filename}` | Delete completed file from disk |
+| `POST` | `/api/import/match` | Batch match playlist metadata (up to 25 items) to YouTube candidates with confidence scoring |
 | `GET` | `/api/health` | Comprehensive dependency check (FastAPI, yt-dlp, FFmpeg, Deno) |
 
 > 💡 **Audio Quality Note**: YouTube streaming audio natively tops out around 128–160 kbps (Opus `itag 251` ~160 kbps, AAC `itag 140` ~128 kbps). Higher bitrate 256 kbps AAC (`itag 141`) is only served by YouTube for accounts authenticated with YouTube Premium cookies.
+
+---
+
+## Import Playlists (CSV / Pasted Text / YouTube)
+
+You can import playlists from external services (Spotify, Apple Music, Deezer) without requiring Spotify API keys, OAuth logins, or DRM handling:
+
+1. **Obtaining a Track List / CSV**:
+   - Use free playlist export tools such as [Exportify](https://exportify.net) (for Spotify), [TuneMyMusic](https://www.tunemymusic.com), or [Soundiiz](https://soundiiz.com) to download a `.csv` file of your playlist.
+   - Alternatively, copy and paste a list of tracks in `Artist - Title` or `Title - Artist` format directly into the app.
+2. **Matching Engine**:
+   - The app parses the file client-side (handling UTF-8 BOM, RFC 4180 quotes, and header variations like `Track Name`, `Artist Name(s)`, `Duration (ms)`).
+   - Tracks are sent in sequential batches of 25 to `/api/import/match`, which queries YouTube and scores candidates using token similarity, duration closeness, Topic/official channel bonuses, and cover/karaoke penalties.
+   - *Note: Matching is best-effort based on YouTube search indexing. Tracks can be previewed or swapped manually on the review screen before saving.*
+3. **Review & Save**:
+   - Low or ambiguous confidence matches are highlighted and surfaced for review.
+   - You can preview audio for 10 seconds, pick alternative candidates, search YouTube manually, or skip items.
+   - Confirmed tracks are saved directly to your browser's local IndexedDB playlist collection. Unmatched or skipped tracks can be downloaded as an `unmatched.csv` report.
 
 ---
 
@@ -170,7 +189,7 @@ youtube-music-playlist-downloader/
 │   │   ├── services/            # yt_dlp_client, format_selector, job_manager, stream_service
 │   │   ├── models/              # Job dataclasses & enums
 │   │   └── schemas/             # Pydantic request/response schemas
-│   └── tests/                   # Pytest test suite (91 tests)
+│   └── tests/                   # Pytest test suite (103 tests)
 ├── frontend/
 │   ├── Dockerfile               # Multi-stage Next.js 16 standalone build
 │   ├── app/                     # Next.js App Router (homepage, layout, manifest, offline)
@@ -197,7 +216,7 @@ youtube-music-playlist-downloader/
 ## CI / CD Pipeline
 
 The automated GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and pull request to `main`:
-1. **Backend Tests**: Sets up Python 3.12, installs dependencies, and runs the 91-test pytest suite.
+1. **Backend Tests**: Sets up Python 3.12, installs dependencies, and runs the 103-test pytest suite.
 2. **Frontend Typecheck & Build**: Sets up Node.js 22, performs TypeScript verification, and generates static Next.js pages.
 3. **Docker Validation**: Verifies `docker-compose.yml` config and builds both images.
 

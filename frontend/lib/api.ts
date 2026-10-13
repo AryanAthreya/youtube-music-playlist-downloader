@@ -281,3 +281,16 @@ export async function getHealth(): Promise<HealthResponse> {
 
 // Re-export the error class for use in components
 export { APIRequestError };
+
+/**
+ * Match up to 25 playlist items against YouTube video IDs.
+ */
+export async function matchImportBatch(
+  items: import("./importer/types").MatchBatchRequestItem[]
+): Promise<import("./importer/types").MatchBatchResponse> {
+  return apiFetch<import("./importer/types").MatchBatchResponse>("/api/import/match", {
+    method: "POST",
+    body: JSON.stringify({ items }),
+  });
+}
+

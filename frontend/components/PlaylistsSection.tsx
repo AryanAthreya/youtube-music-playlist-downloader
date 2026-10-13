@@ -21,6 +21,7 @@ import {
   type CustomPlaylist,
   LOCAL_STORAGE_PLAYLISTS_KEY,
 } from "@/lib/db";
+import { PlaylistImportModal } from "./PlaylistImportModal";
 
 export { LOCAL_STORAGE_PLAYLISTS_KEY, type CustomPlaylist };
 
@@ -59,6 +60,7 @@ export function PlaylistsSection({
   const [customPlaylists, setCustomPlaylists] = useState<PlaylistRecord[]>([]);
   const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
   const [isRefreshingYt, setIsRefreshingYt] = useState(false);
 
@@ -642,21 +644,43 @@ export function PlaylistsSection({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={handleExportPlaylists}
-            className="text-xs text-zinc-400 hover:text-white px-3 py-2 rounded-xl glass-card hover:border-white/20 transition-all"
-            title="Export playlists to JSON file"
+            onClick={() => setShowImportModal(true)}
+            className="text-xs text-zinc-200 hover:text-white px-3 py-2 rounded-xl glass-card hover:border-white/20 transition-all flex items-center gap-1.5 font-semibold"
+            title="Import playlist from CSV file, text list, or YouTube URL"
           >
-            Export
+            <span>📥</span>
+            <span>Import</span>
           </button>
-          <label className="text-xs text-zinc-400 hover:text-white px-3 py-2 rounded-xl glass-card hover:border-white/20 transition-all cursor-pointer">
-            Import
-            <input
-              type="file"
-              accept=".json"
-              className="hidden"
-              onChange={handleImportPlaylists}
-            />
-          </label>
+
+          {/* Backup dropdown */}
+          <div className="relative group">
+            <button
+              type="button"
+              className="text-xs text-zinc-400 hover:text-white px-2.5 py-2 rounded-xl glass-card hover:border-white/20 transition-all"
+              title="Backup & Restore Options"
+            >
+              •••
+            </button>
+            <div className="absolute right-0 top-full mt-1 hidden group-hover:flex flex-col bg-zinc-950 border border-white/10 rounded-xl p-1.5 shadow-xl z-30 min-w-[150px] space-y-1">
+              <button
+                type="button"
+                onClick={handleExportPlaylists}
+                className="w-full text-left px-2.5 py-1.5 text-xs text-zinc-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+              >
+                Export JSON Backup
+              </button>
+              <label className="w-full text-left px-2.5 py-1.5 text-xs text-zinc-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors cursor-pointer block">
+                Restore JSON Backup
+                <input
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={handleImportPlaylists}
+                />
+              </label>
+            </div>
+          </div>
+
           <button
             onClick={() => setShowNewModal(true)}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r ${config.gradient} text-white text-xs font-bold shadow-lg shadow-black/25 active:scale-95 transition-all`}
@@ -897,6 +921,17 @@ export function PlaylistsSection({
           </form>
         </div>
       )}
+
+      {/* Playlist Import Modal (CSV, Text, YouTube) */}
+      <PlaylistImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImportComplete={(playlistId) => {
+          loadCustomPlaylists();
+          setActivePlaylistId(playlistId);
+        }}
+        onPreviewTrack={(track) => onSelectTrack(track, [track])}
+      />
     </div>
   );
 }

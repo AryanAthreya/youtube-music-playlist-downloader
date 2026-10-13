@@ -425,3 +425,117 @@ export type RepeatMode = "off" | "all" | "one";
    - Initialize and synchronize the shared queue and playback engine.
    - Keep downloader UI and all download flows completely unchanged.
 
+---
+
+## 4. Phase 8: Playlist Import (CSV / Pasted Text -> YouTube Matching)
+
+### Architectural Overview
+Spotify, Apple Music, and Deezer cannot be directly streamed or scraped, and Spotify's Web API imposes severe developer restrictions. Phase 8 introduces a **stateless, file- and text-based import pipeline** that matches track metadata against YouTube video IDs via yt-dlp flat-search, scores candidates with a pure heuristic algorithm, presents an interactive review screen, and saves the verified tracks into the local IndexedDB player playlist store.
+
+```
++-----------------------------------------------------------------------------------------+
+|                                    FRONTEND                                             |
+|  [Import Playlist Modal]                                                                |
+|   ├── Option 1: YouTube Playlist URL -> /api/info (existing flow)                       |
+|   ├── Option 2: CSV File Upload (Exportify, TuneMyMusic, Soundiiz, etc.)                |
+|   └── Option 3: Paste Text ("Artist - Title" or "Title - Artist" with flip toggle)      |
+|                                                                                         |
+|  [Client Parser] (Pure TypeScript, BOM-aware, RFC 4180 quotes, header auto-detection)  |
+|        │                                                                                |
+|        ▼ (Chunks of 25 items, sequential batches with Cancel & Resume)                  |
+|  POST /api/import/match ──────────────────────────────────────────────────┐             |
++───────────────────────────────────────────────────────────────────────────┼─────────────+
+                                                                            │
++───────────────────────────────────────────────────────────────────────────┼─────────────+
+|                                    BACKEND                                │             |
+|  `api/import_match.py`                                                    ▼             |
+|   └── `services/match_service.py`                                                       |
+|        ├── In-Memory LRU Cache (max 500 items, keyed by normalized `artist|title`)      |
+|        ├── Dedicated Stream ThreadPoolExecutor (max 2 workers, NEVER download pool)     |
+|        ├── Flat Search: `ytsearch5:"<artist> <title>"` (timeout 8s/item)                |
+|        ├── Scoring Algorithm (0-100 score):                                             |
+|        │    • Title/Artist token overlap & normalization (remove feat/ft/brackets)      |
+|        │    • Duration closeness (|Δ| <= 3s: +30, |Δ| <= 8s: +20, |Δ| > 60s: -30)       |
+|        │    • Channel boost ("- Topic", VEVO: +15; "Official Audio": +15)               |
+|        │    • Penalties: live, cover, remix, sped up, karaoke, 8D unless in source       |
+|        └── Output: Top 3 candidates + bestMatch + confidence (high/medium/low/none)     |
++───────────────────────────────────────────────────────────────────────────┼─────────────+
+                                                                            │
++───────────────────────────────────────────────────────────────────────────┼─────────────+
+|                                    FRONTEND                               ▼             |
+|  [Review Screen]                                                                        |
+|   ├── Confidence filter: High (green), Medium (yellow), Low (amber), None (red)         |
+|   ├── Low / None confidence items highlighted and surfaced first                        |
+|   ├── "Select All High-Confidence" one-click shortcut                                   |
+|   ├── Per-row actions: Preview audio (10s stream), pick candidate, manual search, skip  |
+|   └── Confirm Import:                                                                   |
+|        • Duplicate detection (merge vs add all)                                         |
+|        • Upsert tracks into IndexedDB `tracks` store                                    |
+|        • Save playlist into IndexedDB `playlists` store                                 |
+|        • Post-import report with downloadable `unmatched.csv`                           |
++-----------------------------------------------------------------------------------------+
+```
+
+### Detailed Backend Specifications
+1. **New Schema (`backend/app/schemas/import_match.py`)**:
+   - `MatchItemRequest`: `title` (str, 1-200), `artist` (str, 1-200), `album` (optional str, 0-200), `durationSec` (optional float).
+   - `ImportMatchBatchRequest`: `items` (list of `MatchItemRequest`, max 25 items).
+   - `CandidateMatch`: `videoId` (str), `title` (str), `channel` (str), `durationSec` (float | None), `thumbnail` (str | None), `score` (int 0-100).
+   - `ItemMatchResult`: `source` (MatchItemRequest), `candidates` (list of up to 3 CandidateMatch), `bestMatch` (CandidateMatch | None), `confidence` ("high" | "medium" | "low" | "none").
+   - `ImportMatchBatchResponse`: `results` (list of ItemMatchResult).
+
+2. **New Service (`backend/app/services/match_service.py`)**:
+   - `normalize_string(text: str) -> str`: Lowercase, strip accents/punctuation, remove `feat.`, `ft.`, `featuring`, parentheses, and extra whitespace.
+   - `score_candidate(source: MatchItemRequest, candidate: dict) -> int`:
+     - Base token overlap score between normalized source title/artist and candidate title/channel (up to 50 pts).
+     - Duration closeness: $\pm 3\text{s} \to +30$, $\pm 8\text{s} \to +20$, $\pm 15\text{s} \to +10$, $> 60\text{s} \to -30$.
+     - Channel boost: Channel ends with `"- Topic"` or contains `"VEVO"`: $+15$. Title contains `"Official Audio"`: $+15$.
+     - Negative penalties: If candidate title contains `"live"`, `"cover"`, `"remix"`, `"sped up"`, `"slowed"`, `"karaoke"`, `"8d"`, `"reverb"`, or `"lyrics"` while source title does NOT: deduct $25$ to $40$ pts.
+     - Final clamped score between $0$ and $100$.
+   - `determine_confidence(score: int) -> str`:
+     - $\ge 75 \to \text{"high"}$
+     - $\ge 50 \to \text{"medium"}$
+     - $\ge 25 \to \text{"low"}$
+     - $< 25 \to \text{"none"}$
+   - In-memory bounded LRU cache (`_match_cache`, max 500 entries) keyed by `f"{norm_artist}|{norm_title}"`.
+   - Execution on `stream_service._stream_executor` (2 worker pool), with per-item 8s timeout and individual try/except block so no item failure breaks the batch.
+
+3. **New API Route (`backend/app/api/import_match.py`)**:
+   - Endpoint: `POST /api/import/match` -> returns `ImportMatchBatchResponse`.
+
+4. **Pure Unit Tests (`backend/tests/test_match_service.py`)**:
+   - Test normalization functions.
+   - Test scoring with fixtures: exact title/artist match, topic channel boost, duration delta scoring, penalty deductions for live/cover/karaoke, and confidence classification. Zero network dependencies.
+
+### Detailed Frontend Specifications
+1. **Client-side CSV Parser (`frontend/lib/importer/csvParser.ts`)**:
+   - RFC 4180 compliant CSV parser without external dependencies.
+   - BOM stripping (`\uFEFF`), comma and semicolon delimiter detection, quoted multiline cells, escaped double quotes (`""`).
+   - Column auto-detection mapping variations of Title/Artist/Album/Duration from Spotify, Exportify, Soundiiz, TuneMyMusic:
+     - Title: `"Track Name"`, `"Track"`, `"Title"`, `"Song"`, `"Name"`
+     - Artist: `"Artist Name(s)"`, `"Artist Name"`, `"Artist"`, `"Artists"`, `"Performer"`
+     - Album: `"Album Name"`, `"Album"`
+     - Duration: `"Duration (ms)"`, `"Duration"`, `"Time"`, `"Length"` (converts ms -> seconds).
+   - Text parser supporting `Artist - Title`, `Title - Artist` (with flip option) or line-by-line titles.
+   - Unit tests: `frontend/lib/importer/csvParser.test.ts`.
+
+2. **Import Modal & Workflow (`frontend/components/PlaylistImportModal.tsx`)**:
+   - Tab 1: **YouTube URL** -> reuses `/api/info` import.
+   - Tab 2: **CSV File** -> file upload or drag-and-drop, displays detected columns and parsed track count.
+   - Tab 3: **Paste Text** -> multiline textarea with flip order toggle.
+   - Batch runner: 25 items per batch, sequential calls to `/api/import/match`, progress bar, cancel, resume.
+   - Review Screen:
+     - Confidence filter chips (All, Needs Review, High Confidence).
+     - Row cards: Artwork, Title, Channel, Duration, Confidence badge.
+     - Row actions: Preview audio stream, dropdown of other candidates, manual search modal, skip toggle.
+     - "Select all high-confidence" shortcut.
+   - Confirmation & Saving:
+     - Playlist name field.
+     - Duplicate check (merge vs add all).
+     - Writes to IndexedDB `tracks` & `playlists`.
+     - Import report with summary counts and "Download unmatched.csv" action.
+
+3. **Integration**:
+   - `frontend/components/PlaylistsSection.tsx`: Wire the "Import" button to trigger `PlaylistImportModal`.
+   - Downloader, history, library, and theme features remain completely untouched.
+
