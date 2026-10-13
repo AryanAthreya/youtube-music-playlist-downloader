@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { SearchResultItem } from "@/lib/types";
+import type { SearchResultItem, FileInfo } from "@/lib/types";
+import { LikeButton } from "./LikeButton";
 
 interface SearchResultsProps {
   id: string;
@@ -133,6 +134,23 @@ export function SearchResults({
                     <span>{item.view_count ? `${item.view_count.toLocaleString()} views` : "YouTube"}</span>
                     
                     <div className="flex items-center gap-1.5">
+                      <LikeButton
+                        size="sm"
+                        track={{
+                          filename: `${item.video_id}.m4a`,
+                          clean_title: item.title,
+                          artist: item.uploader,
+                          media_type: "audio",
+                          size_bytes: 0,
+                          created_at: new Date().toISOString(),
+                          modified_at: new Date().toISOString(),
+                          download_url: "",
+                          thumbnail_url: item.thumbnail,
+                          youtube_id: item.video_id,
+                          source_type: "stream",
+                          duration: item.duration || 0,
+                        }}
+                      />
                       {onStreamTrack && (
                         <button
                           onClick={(e) => {

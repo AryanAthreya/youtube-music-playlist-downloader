@@ -12,6 +12,8 @@ import {
   loadOfflineTrackForPlayback,
   getTrackOfflineId,
 } from "@/lib/offlineManager";
+import { LikeButton } from "./LikeButton";
+import { toggleLikedOptimistic } from "@/lib/player/useLiked";
 
 interface FileListProps {
   id: string;
@@ -64,6 +66,7 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set());
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+  const [activeMenuFilename, setActiveMenuFilename] = useState<string | null>(null);
 
   const loadFiles = useCallback(async () => {
     try {
@@ -188,6 +191,20 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
     navigator.clipboard.writeText(url);
     setCopiedFilename(filename);
     setTimeout(() => setCopiedFilename(null), 2000);
+  };
+
+  const handleDeleteSingle = async (filename: string) => {
+    if (!confirm(`Are you sure you want to permanently delete "${filename}"?`)) return;
+    try {
+      setDeletingFile(filename);
+      await deleteFileByName(filename);
+      setFiles((prev) => prev.filter((f) => f.filename !== filename));
+      onCountChange?.(files.length - 1);
+    } catch (e: any) {
+      alert(e?.message || "Failed to delete file");
+    } finally {
+      setDeletingFile(null);
+    }
   };
 
   const filteredFiles = useMemo(() => {
@@ -524,11 +541,14 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
 
                 {/* Action icons on right */}
                 <div
-                  className="flex items-center gap-1 sm:gap-1.5 shrink-0"
+                  className="flex items-center gap-1 sm:gap-1.5 shrink-0 relative"
                   onClick={(e) => {
                     if (isDeleteMode) e.stopPropagation();
                   }}
                 >
+                  {/* Unified Like Button */}
+                  <LikeButton size="sm" track={file} />
+
                   {/* Offline Save / Remove Button */}
                   <button
                     type="button"
@@ -607,6 +627,76 @@ export function FileList({ id, onCountChange, onPlayTrack }: FileListProps) {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                     </svg>
                   </a>
+
+                  {/* Three-dot Context Menu */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveMenuFilename(activeMenuFilename === file.filename ? null : file.filename);
+                      }}
+                      className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors text-xs font-bold"
+                      title="More options"
+                    >
+                      •••
+                    </button>
+
+                    {activeMenuFilename === file.filename && (
+                      <div
+                        className="absolute right-0 top-full mt-1 w-48 bg-zinc-950 border border-white/15 rounded-xl shadow-2xl p-1.5 z-30 space-y-1 animate-in fade-in zoom-in-95 duration-150"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setActiveMenuFilename(null);
+                            await toggleLikedOptimistic(file);
+                          }}
+                          className="w-full text-left px-2.5 py-2 text-xs text-zinc-200 hover:text-white hover:bg-white/10 rounded-lg flex items-center gap-2 transition-colors"
+                        >
+                          <span>❤️</span>
+                          <span>Like / Remove from Liked Songs</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveMenuFilename(null);
+                            handleToggleOffline(file);
+                          }}
+                          className="w-full text-left px-2.5 py-2 text-xs text-zinc-200 hover:text-white hover:bg-white/10 rounded-lg flex items-center gap-2 transition-colors"
+                        >
+                          <span>⚡</span>
+                          <span>{savedOfflineIds.has(getTrackOfflineId(file)) ? "Remove from Offline" : "Save Offline"}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveMenuFilename(null);
+                            handleCopyLink(file.filename);
+                          }}
+                          className="w-full text-left px-2.5 py-2 text-xs text-zinc-200 hover:text-white hover:bg-white/10 rounded-lg flex items-center gap-2 transition-colors"
+                        >
+                          <span>🔗</span>
+                          <span>Copy Download Link</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveMenuFilename(null);
+                            handleDeleteSingle(file.filename);
+                          }}
+                          className="w-full text-left px-2.5 py-2 text-xs text-red-400 hover:bg-red-500/10 rounded-lg flex items-center gap-2 transition-colors"
+                        >
+                          <span>🗑️</span>
+                          <span>Delete File</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             );

@@ -2,6 +2,7 @@
 import type { FileInfo } from "@/lib/types";
 import { resolveMediaUrl } from "@/lib/api";
 import { useTheme } from "@/context/ThemeContext";
+import { LikeButton } from "./LikeButton";
 
 interface MiniPlayerBarProps {
   currentFile: FileInfo | null;
@@ -89,6 +90,9 @@ export function MiniPlayerBar({
 
       {/* Action Buttons */}
       <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+        {/* Like Button */}
+        <LikeButton size="sm" track={currentFile} />
+
         {/* Prev Track */}
         {onPlayPrev && (
           <button

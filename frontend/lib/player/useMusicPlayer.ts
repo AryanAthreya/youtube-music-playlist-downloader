@@ -30,6 +30,7 @@ import {
   getPersistedPlayerState,
   savePersistedPlayerState,
 } from "../db";
+import { toggleLikedOptimistic, isTrackLikedSync } from "./useLiked";
 
 export interface UseMusicPlayerReturn {
   currentTrack: FileInfo | null;
@@ -329,6 +330,8 @@ export function useMusicPlayer(): UseMusicPlayerReturn {
 
   // ── Desktop Keyboard Shortcuts ───────────────────────────────────────────
 
+  const toggleLikeRef = useRef<() => void>(() => {});
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -374,6 +377,10 @@ export function useMusicPlayer(): UseMusicPlayerReturn {
             controllerRef.current?.setMuted(next);
             return next;
           });
+          break;
+        case "KeyL":
+          e.preventDefault();
+          toggleLikeRef.current();
           break;
       }
     };
@@ -462,9 +469,31 @@ export function useMusicPlayer(): UseMusicPlayerReturn {
 
   const toggleLike = useCallback(async () => {
     if (!currentTrack) return;
-    const trackId = currentTrack.youtube_id || `lib:${currentTrack.filename}`;
-    const nextLiked = await toggleLikeTrack(trackId, currentTrack);
+    const trackId = currentTrack.youtube_id || (currentTrack.filename.startsWith("lib:") ? currentTrack.filename : `lib:${currentTrack.filename}`);
+    const nextLiked = await toggleLikedOptimistic(trackId, currentTrack);
     setIsLiked(nextLiked);
+  }, [currentTrack]);
+
+  useEffect(() => {
+    toggleLikeRef.current = toggleLike;
+  }, [toggleLike]);
+
+  useEffect(() => {
+    const handleLikedChanged = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const detail = customEvent.detail;
+      if (!currentTrack) return;
+      const trackId = currentTrack.youtube_id || (currentTrack.filename.startsWith("lib:") ? currentTrack.filename : `lib:${currentTrack.filename}`);
+      if (detail && detail.trackId) {
+        if (detail.trackId === trackId) {
+          setIsLiked(Boolean(detail.liked));
+        }
+      } else {
+        setIsLiked(isTrackLikedSync(trackId));
+      }
+    };
+    window.addEventListener("ytdl_liked_changed", handleLikedChanged);
+    return () => window.removeEventListener("ytdl_liked_changed", handleLikedChanged);
   }, [currentTrack]);
 
   const playNow = useCallback(

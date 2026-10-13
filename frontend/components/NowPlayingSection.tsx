@@ -8,6 +8,8 @@ import { useTheme } from "../context/ThemeContext";
 import { addHistoryEntry } from "@/lib/db";
 import { isTrackSavedOffline, saveTrackForOffline, removeTrackFromOffline } from "@/lib/offlineManager";
 import { QueueDrawer } from "./QueueDrawer";
+import { LikeButton } from "./LikeButton";
+import { toggleLikedOptimistic } from "@/lib/player/useLiked";
 
 export interface NowPlayingSectionHandle {
   togglePlayPause: () => void;
@@ -129,6 +131,17 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
     const [saveProgress, setSaveProgress] = useState(0);
     const [isQueueOpen, setIsQueueOpen] = useState(false);
     const [showSleepMenu, setShowSleepMenu] = useState(false);
+    const lastArtworkTapRef = useRef<number>(0);
+
+    const handleArtworkDoubleTap = () => {
+      const now = Date.now();
+      if (now - lastArtworkTapRef.current < 350) {
+        if (currentFile) {
+          toggleLikedOptimistic(currentFile);
+        }
+      }
+      lastArtworkTapRef.current = now;
+    };
 
     // Sync offline status for current track
     useEffect(() => {
@@ -604,8 +617,12 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
                 />
               </div>
             ) : (
-              /* Music Artwork Container */
-              <div className="absolute inset-0 w-full h-full overflow-hidden flex items-center justify-center bg-zinc-900 select-none">
+              /* Music Artwork Container (Double-tap artwork to like) */
+              <div
+                onClick={handleArtworkDoubleTap}
+                className="absolute inset-0 w-full h-full overflow-hidden flex items-center justify-center bg-zinc-900 select-none cursor-pointer"
+                title="Double tap to like"
+              >
                 {/* Hidden Audio Element */}
                 <audio
                   ref={audioRef}
@@ -788,21 +805,12 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
               </svg>
             </button>
 
-            {/* Like Track */}
-            {onToggleLike && (
-              <button
-                type="button"
-                onClick={onToggleLike}
-                className={`p-2.5 rounded-full transition-all active:scale-90 ${
-                  isLiked ? "text-pink-500 bg-pink-500/15" : "text-zinc-400 hover:text-white"
-                }`}
-                title={isLiked ? "Liked track (Click to unlike)" : "Like track"}
-              >
-                <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-                </svg>
-              </button>
-            )}
+            {/* Unified Like Track Button */}
+            <LikeButton
+              size="lg"
+              track={currentFile}
+              onToggled={() => onToggleLike?.()}
+            />
 
             {/* Queue Toggle Button */}
             <button

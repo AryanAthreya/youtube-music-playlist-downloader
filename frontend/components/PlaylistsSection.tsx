@@ -22,6 +22,8 @@ import {
   LOCAL_STORAGE_PLAYLISTS_KEY,
 } from "@/lib/db";
 import { PlaylistImportModal } from "./PlaylistImportModal";
+import { LikeButton } from "./LikeButton";
+import { saveTrackForOffline } from "@/lib/offlineManager";
 
 export { LOCAL_STORAGE_PLAYLISTS_KEY, type CustomPlaylist };
 
@@ -247,18 +249,34 @@ export function PlaylistsSection({
     }
   };
 
-  // Compile Smart Playlists
+  const [isSavingAllOffline, setIsSavingAllOffline] = useState(false);
+  const [savingOfflineProgress, setSavingOfflineProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
+
+  const handleSaveAllOffline = async (tracks: FileInfo[]) => {
+    if (tracks.length === 0 || isSavingAllOffline) return;
+    setIsSavingAllOffline(true);
+    setSavingOfflineProgress({ current: 0, total: tracks.length });
+    let savedCount = 0;
+    try {
+      for (let i = 0; i < tracks.length; i++) {
+        setSavingOfflineProgress({ current: i + 1, total: tracks.length });
+        try {
+          await saveTrackForOffline(tracks[i]);
+          savedCount++;
+        } catch (e) {
+          console.warn("Failed to save track offline:", tracks[i].clean_title, e);
+        }
+      }
+      alert(`Successfully saved ${savedCount} of ${tracks.length} tracks offline!`);
+    } finally {
+      setIsSavingAllOffline(false);
+      loadSmartPlaylists();
+    }
+  };
+
+  // Compile Smart Playlists (Liked Songs at the top)
   const smartPlaylists = useMemo(() => {
     return [
-      {
-        id: "smart-recent",
-        name: "Recently Played",
-        tracks: recentlyPlayed,
-        icon: "🕒",
-        isSystem: true,
-        isSmart: true,
-        description: "Tracks listened for at least 30 seconds",
-      },
       {
         id: "smart-liked",
         name: "Liked Songs",
@@ -267,6 +285,15 @@ export function PlaylistsSection({
         isSystem: true,
         isSmart: true,
         description: "All tracks you have marked with heart",
+      },
+      {
+        id: "smart-recent",
+        name: "Recently Played",
+        tracks: recentlyPlayed,
+        icon: "🕒",
+        isSystem: true,
+        isSmart: true,
+        description: "Tracks listened for at least 15 seconds",
       },
       {
         id: "smart-most-played",
@@ -287,7 +314,7 @@ export function PlaylistsSection({
         description: "Tracks cached in browser IndexedDB storage",
       },
     ];
-  }, [recentlyPlayed, likedTracks, mostPlayed, offlineTracks]);
+  }, [likedTracks, recentlyPlayed, mostPlayed, offlineTracks]);
 
   // Compile system downloaded playlists
   const systemPlaylists = useMemo(() => {
@@ -504,6 +531,24 @@ export function PlaylistsSection({
                 <span>Shuffle</span>
               </button>
 
+              {/* Save All Offline */}
+              {selectedPlaylist.tracks.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleSaveAllOffline(selectedPlaylist.tracks)}
+                  disabled={isSavingAllOffline}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-all active:scale-95 disabled:opacity-50"
+                  title="Save all tracks in this playlist for offline listening"
+                >
+                  <span>💾</span>
+                  <span>
+                    {isSavingAllOffline
+                      ? `Saving ${savingOfflineProgress.current}/${savingOfflineProgress.total}...`
+                      : "Save all offline"}
+                  </span>
+                </button>
+              )}
+
               {isYtImport && "rawRecord" in selectedPlaylist && (
                 <button
                   type="button"
@@ -597,7 +642,9 @@ export function PlaylistsSection({
                   </div>
 
                   {/* Actions & Duration */}
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <LikeButton size="sm" track={track} />
+
                     {typeof track.duration === "number" && track.duration > 0 && (
                       <span className="text-[11px] font-mono text-zinc-400 hidden sm:inline">
                         {Math.floor(track.duration / 60)}:

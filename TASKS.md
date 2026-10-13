@@ -297,6 +297,42 @@
 
 ---
 
+### Change Request: 15s Play Threshold & Liked Engine
+- [x] Constants and playback listening threshold:
+  - [x] Create `frontend/lib/player/constants.ts` with `PLAY_THRESHOLD_SEC = 15` and `SKIP_THRESHOLD_SEC = 5`
+  - [x] Update `frontend/lib/player/audioController.ts` to measure real accumulated listening time (ignoring scrubbing)
+  - [x] Update `frontend/lib/db.ts` `recordPlayHistory()` with $\ge 15$s or $\ge 50$% condition and discard $< 5$s skips
+- [x] Data layer and persistence (`frontend/lib/db.ts`):
+  - [x] Liking an unknown track automatically upserts into `tracks` before adding to `likedTracks`
+  - [x] Unliking deletes only from `likedTracks`
+  - [x] Export / import JSON includes `likedTracks`
+  - [x] Preserve liked tracks during legacy localStorage migration
+- [x] Liked state sync & UI components:
+  - [x] Shared hook `frontend/lib/player/useLiked.ts` with instant in-memory `Set` and `ytdl_liked_changed` event
+  - [x] Unified `<LikeButton />` (`frontend/components/LikeButton.tsx`) with animated toggle, accent color, and `aria-pressed`
+  - [x] Connect `<LikeButton />` in:
+    - [x] `NowPlayingSection.tsx` (large heart + double-tap artwork gesture to like)
+    - [x] `MiniPlayerBar.tsx` (compact heart)
+    - [x] `QueueDrawer.tsx` (per-row heart)
+    - [x] `SearchResults.tsx` (per-card heart)
+    - [x] `PlaylistsSection.tsx` (per-track row heart)
+    - [x] `FileList.tsx` (history/library rows)
+    - [x] Context menus ("Like / Remove from Liked Songs")
+- [x] Built-in smart playlist "Liked Songs":
+  - [x] Display at the top of Library/Playlists
+  - [x] Non-deletable and non-renamable
+  - [x] Sorted newest liked first (`likedAt` descending)
+  - [x] Actions: Play All, Shuffle All, Save all offline, track count badge
+- [x] Desktop keyboard shortcut:
+  - [x] Pressing `L` toggles like state of currently playing track (ignored in input/textarea/contenteditable)
+- [x] Unit tests & verification:
+  - [x] Create `frontend/lib/player/liked.test.ts` for thresholds, toggling, ordering, upserting, and store sync
+  - [x] Run backend pytest tests (103/103 passed)
+  - [x] Run frontend unit tests (`npm test` - 28/28 passed)
+  - [x] Run `npm run build` with zero errors
+
+---
+
 ## Decisions / Known Issues
 
 1. **Service Worker Strategy**: Hand-written `public/sw.js` chosen over `next-pwa` (unmaintained) and `@serwist/next` (bundler coupling risk with Next.js 16 App Router).

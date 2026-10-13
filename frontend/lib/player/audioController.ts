@@ -21,6 +21,7 @@ import {
   getCurrentStreamingQuality,
   type TrackRecord,
 } from "../db";
+import { PLAY_THRESHOLD_SEC, SKIP_THRESHOLD_SEC } from "./constants";
 import type { ResolvedPlaybackSource } from "./types";
 
 export interface AudioControllerCallbacks {
@@ -294,8 +295,9 @@ export class AudioController {
     const now = Date.now();
     if (!this.audio.paused && this.lastTimeUpdateTimestamp > 0) {
       const deltaSec = (now - this.lastTimeUpdateTimestamp) / 1000;
-      // Filter out massive jump deltas (e.g. seeking)
-      if (deltaSec > 0 && deltaSec < 3) {
+      // Filter out massive jump deltas (e.g. seeking or tab-switch sleep wakes)
+      // Only count real listening time when actively playing
+      if (deltaSec > 0 && deltaSec < 1.5) {
         this.listenedElapsedSec += deltaSec;
       }
     }
@@ -312,10 +314,10 @@ export class AudioController {
       localStorage.setItem(resumeKey, currentTime.toFixed(1));
     }
 
-    // Check listen qualification threshold
+    // Check listen qualification threshold (>= 15s or >= 50% of track)
     if (!this.historyRecordedForCurrentTrack) {
       const thresholdReached =
-        this.listenedElapsedSec >= 30 ||
+        this.listenedElapsedSec >= PLAY_THRESHOLD_SEC ||
         (duration > 0 && this.listenedElapsedSec >= duration * 0.5);
 
       if (thresholdReached) {
@@ -390,7 +392,7 @@ export class AudioController {
     ) {
       const duration = this.audio.duration || this.currentTrack.duration || 0;
       if (
-        this.listenedElapsedSec >= 30 ||
+        this.listenedElapsedSec >= PLAY_THRESHOLD_SEC ||
         (duration > 0 && this.listenedElapsedSec >= duration * 0.5)
       ) {
         this.historyRecordedForCurrentTrack = true;

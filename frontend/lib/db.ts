@@ -17,6 +17,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type { FileInfo, PlaylistInfoResponse } from "./types";
 import type { PersistedPlayerState } from "./player/types";
+import { PLAY_THRESHOLD_SEC, SKIP_THRESHOLD_SEC } from "./player/constants";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -483,7 +484,8 @@ export async function deletePlaylist(id: string): Promise<void> {
 const MAX_HISTORY_ITEMS = 500;
 
 /**
- * Record a played track only after listening for >= 30 seconds OR >= 50% of track duration.
+ * Record a played track only after listening for >= 15 seconds OR >= 50% of track duration.
+ * Skipping before 5 seconds is discarded.
  * Updates playCounts aggregate and caps history at 500 entries.
  */
 export async function recordPlayHistory(
@@ -492,9 +494,14 @@ export async function recordPlayHistory(
   durationSec: number,
   trackInfo?: FileInfo,
 ): Promise<boolean> {
-  // Check qualification
+  // Discard early skips (< 5 seconds)
+  if (listenedSec < SKIP_THRESHOLD_SEC) {
+    return false;
+  }
+
+  // Check qualification: >= 15 seconds or >= 50% of track duration
   const isQualified =
-    listenedSec >= 30 || (durationSec > 0 && listenedSec >= durationSec * 0.5);
+    listenedSec >= PLAY_THRESHOLD_SEC || (durationSec > 0 && listenedSec >= durationSec * 0.5);
 
   if (!isQualified) {
     return false;
@@ -559,7 +566,7 @@ export async function recordPlayHistory(
 // Legacy alias used by existing components
 export async function addHistoryEntry(track: FileInfo): Promise<void> {
   const tr = fileInfoToTrackRecord(track);
-  await recordPlayHistory(tr.id, 30, tr.durationSec, track);
+  await recordPlayHistory(tr.id, PLAY_THRESHOLD_SEC, tr.durationSec, track);
 }
 
 /**
@@ -730,9 +737,22 @@ export async function toggleLikeTrack(trackId: string, trackInfo?: FileInfo): Pr
       }
       return false;
     } else {
+      // Upsert track into 'tracks' store before recording the like
+      const existingTrack = await db.get("tracks", trackId);
       if (trackInfo) {
         await db.put("tracks", fileInfoToTrackRecord(trackInfo));
+      } else if (!existingTrack) {
+        const isLib = trackId.startsWith("lib:");
+        await db.put("tracks", {
+          id: trackId,
+          title: isLib ? trackId.replace(/^lib:/, "") : trackId,
+          artist: "Unknown Artist",
+          durationSec: 0,
+          source: isLib ? "library" : "youtube",
+          addedAt: Date.now(),
+        });
       }
+
       await db.put("likedTracks", { trackId, likedAt: Date.now() });
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("ytdl_liked_changed", { detail: { trackId, liked: true } }));
@@ -741,6 +761,18 @@ export async function toggleLikeTrack(trackId: string, trackInfo?: FileInfo): Pr
     }
   } catch {
     return false;
+  }
+}
+
+export async function getAllLikedTrackIds(): Promise<string[]> {
+  const dbPromiseRef = getDB();
+  if (!dbPromiseRef) return [];
+  try {
+    const db = await dbPromiseRef;
+    const all = await db.getAll("likedTracks");
+    return all.map((item) => item.trackId);
+  } catch {
+    return [];
   }
 }
 
@@ -756,7 +788,18 @@ export async function getLikedTracks(): Promise<TrackRecord[]> {
     const results: TrackRecord[] = [];
     for (const item of all) {
       const tr = await tracksTx.store.get(item.trackId);
-      if (tr) results.push(tr);
+      if (tr) {
+        results.push(tr);
+      } else {
+        results.push({
+          id: item.trackId,
+          title: item.trackId.startsWith("lib:") ? item.trackId.replace(/^lib:/, "") : item.trackId,
+          artist: "Unknown Artist",
+          durationSec: 0,
+          source: item.trackId.startsWith("lib:") ? "library" : "youtube",
+          addedAt: item.likedAt,
+        });
+      }
     }
     return results;
   } catch {
@@ -936,11 +979,21 @@ export async function getStorageQuotaEstimate(): Promise<{
 
 export async function exportPlaylistsAsJson(): Promise<string> {
   const playlists = await getAllPlaylists();
+  const dbPromiseRef = getDB();
+  let likedTracks: LikedTrackRecord[] = [];
+  if (dbPromiseRef) {
+    try {
+      const db = await dbPromiseRef;
+      likedTracks = await db.getAll("likedTracks");
+    } catch {}
+  }
+
   return JSON.stringify(
     {
       version: 2,
       exportedAt: new Date().toISOString(),
       playlists,
+      likedTracks,
     },
     null,
     2,
@@ -968,6 +1021,32 @@ export async function importPlaylistsFromJson(jsonString: string): Promise<{ imp
 
   const merged = Array.from(map.values());
   await saveAllPlaylists(merged);
+
+  // Restore likedTracks if present in export payload
+  if (Array.isArray(parsed.likedTracks)) {
+    const dbPromiseRef = getDB();
+    if (dbPromiseRef) {
+      try {
+        const db = await dbPromiseRef;
+        const tx = db.transaction("likedTracks", "readwrite");
+        for (const item of parsed.likedTracks) {
+          if (item && item.trackId) {
+            await tx.store.put({
+              trackId: item.trackId,
+              likedAt: item.likedAt || Date.now(),
+            });
+          }
+        }
+        await tx.done;
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("ytdl_liked_changed", { detail: { imported: true } }));
+        }
+      } catch (e) {
+        console.warn("Failed to import liked tracks:", e);
+      }
+    }
+  }
+
   return { imported: count };
 }
 

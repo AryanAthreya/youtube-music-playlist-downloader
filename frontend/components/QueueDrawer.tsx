@@ -4,6 +4,7 @@ import React from "react";
 import type { FileInfo } from "@/lib/types";
 import { resolveMediaUrl } from "@/lib/api";
 import { useTheme } from "@/context/ThemeContext";
+import { LikeButton } from "./LikeButton";
 
 interface QueueDrawerProps {
   isOpen: boolean;
@@ -128,7 +129,8 @@ export function QueueDrawer({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <LikeButton size="sm" track={currentTrack} />
                   {isPlaying ? (
                     <span
                       className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
@@ -198,11 +200,12 @@ export function QueueDrawer({
                         </div>
                       </div>
 
-                      {/* Controls: Move Up / Down, Remove */}
+                      {/* Controls: Like, Move Up / Down, Remove */}
                       <div
                         className="flex items-center gap-1 shrink-0"
                         onClick={(e) => e.stopPropagation()}
                       >
+                        <LikeButton size="sm" track={track} />
                         {relIndex > 0 && (
                           <button
                             type="button"

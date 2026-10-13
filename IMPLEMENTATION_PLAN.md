@@ -427,6 +427,44 @@ export type RepeatMode = "off" | "all" | "one";
 
 ---
 
+## 5. Playback Qualification & Unified Liked Engine Specifications
+
+### 1. Play Threshold ($15\text{s}$) & Listening Qualification
+- **Constants File (`frontend/lib/player/constants.ts`)**:
+  - `PLAY_THRESHOLD_SEC = 15`: Minimum accumulated listening time required before a play is registered.
+  - `SKIP_THRESHOLD_SEC = 5`: Skipping before 5 seconds is discarded immediately as a skip, never counting towards history or play count.
+- **Real Listening Time Accumulation**:
+  - `AudioController` accumulates `listenedElapsedSec += delta` solely during active playing time (`timeupdate` delta $< 1.5\text{s}$). Scrubbing/seeking directly moves `currentTime` but does **not** artificially increase accumulated listening time.
+  - Qualification rule: `listenedSec >= PLAY_THRESHOLD_SEC || (durationSec > 0 && listenedSec >= durationSec * 0.5)`.
+  - Skipping before `SKIP_THRESHOLD_SEC` (5s) never writes to history.
+
+### 2. Unified "Liked Songs" & Global Heart Component
+- **Data Model**:
+  - Store: `likedTracks` in IndexedDB with `{ trackId, likedAt }`.
+  - Liking an unknown track upserts its `TrackRecord` into `tracks` before adding to `likedTracks`.
+  - Unliking removes only the entry from `likedTracks`.
+  - Preserved in JSON export/import (`exportPlaylistsAsJson` & `importPlaylistsFromJson`).
+- **Reactive Liked Store & Hook (`frontend/lib/player/useLiked.ts`)**:
+  - Backed by an in-memory `Set<string>` of liked track IDs synchronized across all mounted components via `"ytdl_liked_changed"` custom events.
+  - Optimistic UI updates with instant toggle and micro-animation.
+  - Accessible `aria-label` and `aria-pressed`.
+- **Global Placement (`LikeButton.tsx`)**:
+  - `NowPlayingSection`: Large heart next to controls + double-tap artwork gesture to toggle like.
+  - `MiniPlayerBar`: Compact heart icon alongside playback controls.
+  - `QueueDrawer`: Per-row heart icon.
+  - `SearchResults`: Heart button on every search result row.
+  - `PlaylistsSection`: Heart button on every track row.
+  - `FileList`: Heart button on downloaded library track rows.
+- **Desktop Keyboard Shortcut**:
+  - `L` key toggles like for the currently playing track (ignored when user is typing in `input`, `textarea`, or contenteditable).
+- **Built-in "Liked Songs" Smart Playlist**:
+  - Displayed prominently at the top of Playlists Hub.
+  - Newest liked first.
+  - Features: "Play All", "Shuffle All", "Save all offline", track count.
+  - Non-deletable and non-renamable.
+
+---
+
 ## 4. Phase 8: Playlist Import (CSV / Pasted Text -> YouTube Matching)
 
 ### Architectural Overview
@@ -538,4 +576,59 @@ Spotify, Apple Music, and Deezer cannot be directly streamed or scraped, and Spo
 3. **Integration**:
    - `frontend/components/PlaylistsSection.tsx`: Wire the "Import" button to trigger `PlaylistImportModal`.
    - Downloader, history, library, and theme features remain completely untouched.
+
+---
+
+## 5. Change Request: Play Threshold (15s) & Liked Engine
+
+### 1. Play Threshold (15 seconds)
+- **Problem**: Previously 30s listen time was required before recording a track in `history` and `playCounts`.
+- **New Requirement**:
+  - A track is recorded in `history` and counted in `playCounts` / "Recently Played" after **$\ge 15$ seconds of actual listening or $\ge 50$% of the track duration**, whichever comes first.
+  - Count **real listening time** (accumulated while playing), NOT seek position. Scrubbing directly to the middle does not count as playback time.
+  - Skipping before 5s is not a play.
+  - Values extracted into dedicated constants: `frontend/lib/player/constants.ts`:
+    ```typescript
+    export const PLAY_THRESHOLD_SEC = 15;
+    export const SKIP_THRESHOLD_SEC = 5;
+    ```
+  - In `frontend/lib/player/audioController.ts`, track `listenedElapsedSec` by measuring delta timestamps during `timeupdate` (ignoring discontinuous seek jumps where $|delta| > 1.5$s).
+  - Update `frontend/lib/db.ts` `recordPlayHistory()` to use `PLAY_THRESHOLD_SEC` and `SKIP_THRESHOLD_SEC`.
+
+### 2. Like Button (Heart) & "Liked Songs" Engine
+- **Data Model**:
+  - `likedTracks` IndexedDB store: `{ trackId: string, likedAt: number }`.
+  - Track metadata persists in the `tracks` store.
+  - Liking an unrecorded track automatically upserts it into `tracks` before adding to `likedTracks`.
+  - Unliking deletes only the `likedTracks` record, keeping metadata in `tracks`.
+  - Offline compatibility: IndexedDB only.
+  - JSON Backup / Restore: included in `exportPlaylistsAsJson()` and `importPlaylistsFromJson()`.
+  - Survives migration from localStorage playlists.
+- **Smart Playlist: "Liked Songs"**:
+  - Virtual/built-in smart playlist at the very top of `PlaylistsSection` (above custom playlists).
+  - Not deletable and not renamable.
+  - Sorted newest liked first (`likedAt` descending).
+  - Features: Track count badge, "Play All", "Shuffle All", "Save all offline".
+- **Unified `<LikeButton />` Component**:
+  - Reusable across:
+    1. Now Playing screen (large icon + double-tap artwork gesture to like)
+    2. Mini-player bar
+    3. Queue drawer rows
+    4. Search results cards
+    5. Playlist track rows
+    6. History / Library rows
+    7. Context / 3-dot menus ("Like / Remove from Liked Songs")
+  - Works consistently for stream tracks, offline tracks, and library files (using `lib:<filename>`).
+  - Optimistic toggle with micro-animation (`scale-110 active:scale-125 transition-transform`).
+  - Accessible labels: `aria-label="Like track"`, `aria-pressed={isLiked}`.
+  - Color: Filled heart in theme accent color when liked; stroke outline when unliked.
+  - Shared reactive hook `useLiked(trackId)` / `useLikedTrack(track)`:
+    - In-memory `Set<string>` cache for instant $0$ms lookups.
+    - Synchronized across all components simultaneously via custom event `ytdl_liked_changed`.
+- **Desktop Keyboard Shortcut**:
+  - Key `'l'` / `'L'` toggles like state of currently playing track (ignored inside `input`, `textarea`, `contenteditable`).
+- **Testing**:
+  - Unit tests for threshold constants and calculation logic.
+  - Unit tests for like/unlike toggling, upserting unknown tracks, newest-first ordering, and synchronizing across consumers.
+
 
