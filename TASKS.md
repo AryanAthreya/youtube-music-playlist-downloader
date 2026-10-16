@@ -337,44 +337,44 @@
 - [x] Create feature branch `feature/ui-redesign`
 - [x] Create detailed design specification & implementation plan in `UI_REDESIGN_PLAN.md`
 - [x] Update `TASKS.md` with redesign scope and roadmap
-- [ ] Solicit user approval on design spec and screen-by-screen plan before coding
-- [ ] Step 1: Design Tokens, Quicksand Font & Theme System Setup:
-  - [ ] Configure `Quicksand` in `frontend/app/layout.tsx` via `next/font/google`
-  - [ ] Add design tokens (`--bg-page`, `--bg-card`, `--accent-navy`, etc.) in `frontend/app/globals.css`
-  - [ ] Add `"soft-light"` and `"soft-dark"` presets in `frontend/context/ThemeContext.tsx`
-  - [ ] Support system color scheme follow mode
-  - [ ] Add canvas-based dynamic artwork accent utility in `frontend/lib/ui/colorExtractor.ts`
-- [ ] Step 2: Bottom Navigation Bar & Top Header Reskin:
-  - [ ] Reskin `frontend/components/BottomNavBar.tsx` with active indicator ring + label
-  - [ ] Update mobile navigation tabs (Home, Music, Liked, Downloads) with active badge
-  - [ ] Reskin top header with hamburger, title, kebab, and theme trigger
-- [ ] Step 3: Home / Discover Screen Reskin:
-  - [ ] Reskin `frontend/components/UrlInputForm.tsx` with pill container, inset shadow, search icon
-  - [ ] Reskin `frontend/components/RecentAndActiveSection.tsx` with "Jump back in" horizontal card carousel and frosted-glass play pill
-  - [ ] Add 3-way text switcher ("Recently / Most played / Liked")
-  - [ ] Reskin `frontend/components/SearchResults.tsx` with soft card list rows and kebab menus
-- [ ] Step 4: Floating Mini-Player Bar Reskin:
-  - [ ] Reskin `frontend/components/MiniPlayerBar.tsx` as floating rounded card above bottom nav
-  - [ ] Add circular progress ring around circular navy play/pause button
-  - [ ] Add swipe up to expand full player, swipe left/right to skip
-- [ ] Step 5: Player / Now Playing Bottom Sheet Reskin:
-  - [ ] Reskin `frontend/components/NowPlayingSection.tsx` with full-screen slide-up sheet and drag handle
-  - [ ] Squircle artwork (radius 32px) with soft shadow and subtle playing breathing effect
-  - [ ] Custom thin progress scrubber with glowing knob and time tooltip
-  - [ ] Controls row with large circular navy play/pause button, shuffle, repeat, heart, queue button
-  - [ ] Touch gestures: swipe left/right to skip, double tap artwork to like
-- [ ] Step 6: Music List (Library & Playlists) Underline Tabs Reskin:
-  - [ ] Reskin `frontend/components/FileList.tsx` with underline tabs (Songs / Artists / Albums / Playlists)
-  - [ ] Implement search/filter within list and "Saved offline" chip
-  - [ ] Reskin `frontend/components/PlaylistsSection.tsx` with grid layout, collage covers, and pinned Liked Songs card
-- [ ] Step 7: Downloader, Queue, Modals & Utility Sheets Reskin:
-  - [ ] Reskin `QueueDrawer.tsx`, `VideoInfoCard.tsx`, `PlaylistVideoList.tsx`, `ProgressBar.tsx`
-  - [ ] Reskin `PlaylistImportModal.tsx`, `ThemeSelectorModal.tsx`, notifications, and banners
-- [ ] Step 8: Verification, Guardrail Check & Cross-Device Walkthrough:
-  - [ ] Run guardrail check `git diff --stat main...HEAD` (zero changes to untouchable files)
-  - [ ] Run backend tests (`pytest backend/tests -v`, 103+ pass)
-  - [ ] Run frontend unit tests (`npm test`, 28+ pass)
-  - [ ] Run frontend build (`npm run build`, zero errors)
+- [x] Solicit user approval on design spec and screen-by-screen plan before coding
+- [x] Step 1: Design Tokens, Quicksand Font & Theme System Setup:
+  - [x] Configure `Quicksand` in `frontend/app/layout.tsx` via `next/font/google`
+  - [x] Add design tokens (`--bg-page`, `--bg-card`, `--accent-navy`, etc.) in `frontend/app/globals.css`
+  - [x] Add `"soft-light"` and `"soft-dark"` presets in `frontend/context/ThemeContext.tsx`
+  - [x] Support system color scheme follow mode
+  - [x] Add canvas-based dynamic artwork accent utility in `frontend/lib/ui/colorExtractor.ts`
+- [x] Step 2: Bottom Navigation Bar & Top Header Reskin:
+  - [x] Reskin `frontend/components/BottomNavBar.tsx` with active indicator ring + label
+  - [x] Update mobile navigation tabs (Home, Music, Liked, Downloads) with active badge
+  - [x] Reskin top header with hamburger, title, kebab, and theme trigger
+- [x] Step 3: Home / Discover Screen Reskin:
+  - [x] Reskin `frontend/components/UrlInputForm.tsx` with pill container, inset shadow, search icon
+  - [x] Reskin `frontend/components/RecentAndActiveSection.tsx` with "Jump back in" horizontal card carousel and frosted-glass play pill
+  - [x] Add 3-way text switcher ("Recently / Most played / Liked")
+  - [x] Reskin `frontend/components/SearchResults.tsx` with soft card list rows and kebab menus
+- [x] Step 4: Floating Mini-Player Bar Reskin:
+  - [x] Reskin `frontend/components/MiniPlayerBar.tsx` as floating rounded card above bottom nav
+  - [x] Add circular progress ring around circular navy play/pause button
+  - [x] Add swipe up to expand full player, swipe left/right to skip
+- [x] Step 5: Player / Now Playing Bottom Sheet Reskin:
+  - [x] Reskin `frontend/components/NowPlayingSection.tsx` with full-screen slide-up sheet and drag handle
+  - [x] Squircle artwork (radius 32px) with soft shadow and subtle playing breathing effect
+  - [x] Custom thin progress scrubber with glowing knob and time tooltip
+  - [x] Controls row with large circular navy play/pause button, shuffle, repeat, heart, queue button
+  - [x] Touch gestures: swipe left/right to skip, double tap artwork to like
+- [x] Step 6: Music List (Library & Playlists) Underline Tabs Reskin:
+  - [x] Reskin `frontend/components/FileList.tsx` with underline tabs (Songs / Artists / Albums / Saved Offline)
+  - [x] Implement search/filter within list and "Saved offline" chip
+  - [x] Reskin `frontend/components/PlaylistsSection.tsx` with grid layout, collage covers, and pinned Liked Songs card
+- [x] Step 7: Downloader, Queue, Modals & Utility Sheets Reskin:
+  - [x] Reskin `QueueDrawer.tsx`, `VideoInfoCard.tsx`, `PlaylistVideoList.tsx`, `ProgressBar.tsx`
+  - [x] Reskin `PlaylistImportModal.tsx`, `ThemeSelectorModal.tsx`, notifications, and banners
+- [x] Step 8: Verification, Guardrail Check & Cross-Device Walkthrough:
+  - [x] Run guardrail check `git diff --stat main...HEAD` (zero changes to untouchable files)
+  - [x] Run backend tests (`pytest backend/tests -v`, 103+ pass)
+  - [x] Run frontend unit tests (`npm test`, 28+ pass)
+  - [x] Run frontend build (`npm run build`, zero errors)
   - [ ] Test across viewports (390x844, 360x640, 768x1024, 1440x900) in Soft Light & Soft Dark
 
 ---
