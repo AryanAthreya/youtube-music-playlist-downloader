@@ -10,6 +10,7 @@ import { isTrackSavedOffline, saveTrackForOffline, removeTrackFromOffline } from
 import { QueueDrawer } from "./QueueDrawer";
 import { LikeButton } from "./LikeButton";
 import { toggleLikedOptimistic } from "@/lib/player/useLiked";
+import { extractArtworkColor } from "@/lib/ui/colorExtractor";
 
 export interface NowPlayingSectionHandle {
   togglePlayPause: () => void;
@@ -83,7 +84,8 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
     },
     ref
   ) {
-    const { config } = useTheme();
+    const { config, theme } = useTheme();
+    const isLight = config.isLight || theme === "soft-light";
     const videoRef = useRef<HTMLVideoElement>(null);
     const audioRef = useRef<HTMLAudioElement>(null);
     const controlsBarRef = useRef<HTMLDivElement>(null);
@@ -131,7 +133,21 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
     const [saveProgress, setSaveProgress] = useState(0);
     const [isQueueOpen, setIsQueueOpen] = useState(false);
     const [showSleepMenu, setShowSleepMenu] = useState(false);
+    const [dominantColor, setDominantColor] = useState<string | null>(null);
     const lastArtworkTapRef = useRef<number>(0);
+    const artworkTouchStartX = useRef<number | null>(null);
+    const artworkTouchStartY = useRef<number | null>(null);
+
+    // Extract dominant dynamic color for Now Playing background tint
+    useEffect(() => {
+      if (currentFile?.thumbnail_url) {
+        extractArtworkColor(resolveMediaUrl(currentFile.thumbnail_url), currentFile.youtube_id || currentFile.filename)
+          .then((col) => setDominantColor(col))
+          .catch(() => setDominantColor(null));
+      } else {
+        setDominantColor(null);
+      }
+    }, [currentFile?.thumbnail_url, currentFile?.youtube_id, currentFile?.filename]);
 
     const handleArtworkDoubleTap = () => {
       const now = Date.now();
@@ -141,6 +157,28 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
         }
       }
       lastArtworkTapRef.current = now;
+    };
+
+    const handleArtworkTouchStart = (e: React.TouchEvent) => {
+      artworkTouchStartX.current = e.touches[0].clientX;
+      artworkTouchStartY.current = e.touches[0].clientY;
+    };
+
+    const handleArtworkTouchEnd = (e: React.TouchEvent) => {
+      if (artworkTouchStartX.current === null || artworkTouchStartY.current === null) return;
+      const deltaX = e.changedTouches[0].clientX - artworkTouchStartX.current;
+      const deltaY = e.changedTouches[0].clientY - artworkTouchStartY.current;
+
+      if (Math.abs(deltaX) > 45 && Math.abs(deltaX) > Math.abs(deltaY)) {
+        if (deltaX < 0) {
+          handlePlayNextInActivePlaylist();
+        } else {
+          handlePlayPrevInActivePlaylist();
+        }
+      }
+
+      artworkTouchStartX.current = null;
+      artworkTouchStartY.current = null;
     };
 
     // Sync offline status for current track
@@ -511,75 +549,85 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
     const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
     return (
-      <div id={id} className="w-full space-y-4 animate-in fade-in duration-300">
-        {/* ── PLAYLIST NAME HEADER ─── */}
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div
-              className="w-8 h-8 rounded-xl flex items-center justify-center text-sm shrink-0 border border-white/10 shadow"
-              style={{
-                backgroundColor: `${config.primaryHex}20`,
-                color: config.primaryHex,
-              }}
-            >
-              🎵
-            </div>
-            <div className="min-w-0">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                Playing From
-              </span>
-              <h2 className="text-sm sm:text-base font-bold text-white truncate leading-tight">
-                {playlistName || "All Downloads"}
-              </h2>
-            </div>
+      <div
+        id={id}
+        className={`w-full p-4 sm:p-6 rounded-3xl border transition-all ${
+          isLight
+            ? "bg-white border-[#E2E8F0] shadow-[0_12px_32px_rgba(35,55,110,0.10)]"
+            : "bg-[#161C2E] border-white/10 shadow-[0_12px_32px_rgba(0,0,0,0.5)]"
+        } space-y-4 animate-in fade-in duration-300`}
+      >
+        {/* Top sheet drag handle */}
+        <div className="w-10 h-1.5 rounded-full bg-slate-200 dark:bg-white/20 mx-auto -mt-1 mb-2 pointer-events-none" />
+
+        {/* ── TOP HEADER (Back chevron, "Player" title, Offline & Queue info) ─── */}
+        <div className="flex items-center justify-between pb-1">
+          <button
+            type="button"
+            onClick={onGoToHistory}
+            className="p-1.5 -ml-1 text-[#9AA3B5] hover:text-[#1A1F2C] dark:hover:text-white rounded-full transition-colors active:scale-90"
+            title="Back / Minimize"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+
+          <div className="text-center">
+            <h2 className="text-sm sm:text-base font-bold text-[#1A1F2C] dark:text-[#EAF0FF] font-quicksand">
+              Player
+            </h2>
+            <p className="text-[10px] text-[#9AA3B5] truncate max-w-[180px]">
+              {playlistName || "All Downloads"} • {currentPlaylistFiles.length} songs
+            </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5">
             {/* Offline Save Toggle */}
             <button
               type="button"
               onClick={handleToggleOfflineCurrentTrack}
               disabled={isSavingOffline}
-              className="px-2.5 py-1 rounded-full border text-[11px] font-semibold flex items-center gap-1.5 transition-all glass-card hover:border-white/30"
-              title={isCurrentOffline ? "Saved offline (click to remove)" : "Save track to device for offline playback"}
+              className={`p-1.5 rounded-full border transition-all text-xs ${
+                isLight ? "border-slate-200 hover:bg-slate-50" : "border-white/10 hover:bg-white/5"
+              }`}
+              title={isCurrentOffline ? "Saved offline (click to remove)" : "Save track for offline playback"}
             >
               {isSavingOffline ? (
-                <span className="text-amber-400 font-mono">{saveProgress}%</span>
+                <span className="text-amber-500 font-mono text-[10px]">{saveProgress}%</span>
               ) : isCurrentOffline ? (
-                <>
-                  <span className="text-emerald-400">⚡</span>
-                  <span className="text-emerald-300">Offline</span>
-                </>
+                <span className="text-emerald-500">⚡</span>
               ) : (
-                <>
-                  <span className="text-zinc-400">📥</span>
-                  <span className="text-zinc-300">Save Offline</span>
-                </>
+                <span className="text-[#9AA3B5]">📥</span>
               )}
             </button>
-
-            <span
-              className="text-[11px] font-mono font-medium px-2.5 py-1 rounded-full border shrink-0 transition-colors"
-              style={{
-                borderColor: `${config.primaryHex}35`,
-                backgroundColor: `${config.primaryHex}15`,
-                color: config.primaryHex,
-              }}
-            >
-              {currentPlaylistFiles.length} {currentPlaylistFiles.length === 1 ? "song" : "songs"}
-            </span>
           </div>
         </div>
 
-        {/* ── HERO MEDIA CARD (1:1.15 Modern Ratio, Lower Controls Only) ─── */}
-        <div className="relative z-0 group">
-          {/* Subtle ambient lighting behind hero equalized by theme */}
+        {/* Subtle "Listening to" heading */}
+        <p className="text-xs font-bold uppercase tracking-wider text-[#9AA3B5] text-center font-quicksand pt-0.5 pb-1">
+          Listening to
+        </p>
+
+        {/* ── HUGE SQUIRCLE ARTWORK (Radius 32px, soft drop shadow, breathing pulse) ─── */}
+        <div className="relative group flex items-center justify-center my-2">
+          {/* Ambient blurred glow from dominant color */}
           <div
-            className="absolute -inset-2 rounded-[32px] blur-2xl opacity-75 group-hover:opacity-100 transition-opacity"
-            style={{ background: `radial-gradient(circle, ${config.glow} 0%, transparent 70%)` }}
+            className="absolute -inset-3 rounded-[36px] blur-3xl opacity-50 pointer-events-none transition-all duration-700"
+            style={{
+              background: `radial-gradient(circle, ${dominantColor || config.glow} 0%, transparent 70%)`,
+            }}
           />
 
-          <div className="relative w-full aspect-[1/1.1] sm:aspect-[4/3] rounded-3xl overflow-hidden bg-zinc-950 border border-white/10 shadow-2xl flex flex-col justify-end">
+          <div
+            onTouchStart={handleArtworkTouchStart}
+            onTouchEnd={handleArtworkTouchEnd}
+            onClick={handleArtworkDoubleTap}
+            className={`relative w-full max-w-[270px] sm:max-w-[310px] aspect-square rounded-[32px] overflow-hidden border border-black/5 dark:border-white/10 select-none cursor-pointer shadow-[0_20px_45px_rgba(35,55,110,0.18)] dark:shadow-[0_20px_45px_rgba(0,0,0,0.65)] ${
+              isPlaying ? "animate-artwork-breathe" : ""
+            }`}
+            title="Double tap to like, swipe left/right to skip"
+          >
             {/* If YouTube Search Preview */}
             {currentFile.is_preview && currentFile.youtube_id ? (
               <div className="absolute inset-0 w-full h-full bg-black flex items-center justify-center select-auto">
@@ -593,7 +641,6 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
                 />
               </div>
             ) : isVideo ? (
-              /* Video Container - Strictly Display Only (No screen click conflicts) */
               <div className="absolute inset-0 w-full h-full bg-black flex items-center justify-center select-none">
                 <video
                   ref={videoRef}
@@ -617,12 +664,7 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
                 />
               </div>
             ) : (
-              /* Music Artwork Container (Double-tap artwork to like) */
-              <div
-                onClick={handleArtworkDoubleTap}
-                className="absolute inset-0 w-full h-full overflow-hidden flex items-center justify-center bg-zinc-900 select-none cursor-pointer"
-                title="Double tap to like"
-              >
+              <div className="w-full h-full relative">
                 {/* Hidden Audio Element */}
                 <audio
                   ref={audioRef}
@@ -647,250 +689,230 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
                   <img
                     src={resolveMediaUrl(currentFile.thumbnail_url)}
                     alt={currentFile.clean_title}
-                    className={`w-full h-full object-cover transition-transform duration-700 ${
-                      isPlaying ? "scale-105" : "scale-100 opacity-85"
-                    }`}
+                    className="w-full h-full object-cover"
                   />
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-zinc-900 to-black text-6xl text-zinc-500">
+                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-tr from-slate-800 to-slate-900 text-6xl text-white">
                     🎵
                   </div>
                 )}
               </div>
             )}
-
-            {/* Blended Dark Vignette with Full Song Name & Metadata */}
-            <div className="relative z-10 p-5 sm:p-6 bg-gradient-to-t from-black/95 via-black/70 to-transparent pt-16 pointer-events-none">
-              <div className="flex items-center gap-2 pb-1.5">
-                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: config.primaryHex }}>
-                  {currentFile.is_preview ? "YouTube Preview" : isVideo ? "Video Track" : "Audio Track"}
-                </span>
-                <span className="text-zinc-500">•</span>
-                <span className="text-[10px] font-medium text-zinc-400">
-                  {currentFile.size_bytes ? formatFileSize(currentFile.size_bytes) : "Online Stream"}
-                </span>
-              </div>
-
-              <h1 className="text-base sm:text-xl font-bold text-white tracking-tight leading-snug drop-shadow line-clamp-2">
-                {currentFile.clean_title}
-              </h1>
-            </div>
           </div>
         </div>
 
-        {/* ── UNIFIED MINIMALIST CONTROLS BAR (For Both Audio & Video) ──── */}
+        {/* ── TRACK TITLE, SUBTITLE & HEART ROW ─── */}
+        <div className="flex items-center justify-between gap-3 pt-2 px-1">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-base sm:text-lg font-extrabold text-[#1A1F2C] dark:text-[#EAF0FF] font-quicksand truncate">
+              {currentFile.clean_title}
+            </h1>
+            <p className="text-xs text-[#9AA3B5] truncate mt-0.5 font-medium">
+              {currentFile.artist || "YouTube Music"}
+            </p>
+          </div>
+
+          <LikeButton
+            size="lg"
+            track={currentFile}
+            onToggled={() => onToggleLike?.()}
+          />
+        </div>
+
+        {/* ── CUSTOM THIN PROGRESS SCRUBBER ─── */}
+        <div className="space-y-1.5 pt-2">
+          <div className="relative w-full flex items-center">
+            <input
+              type="range"
+              min={0}
+              max={duration || 100}
+              value={currentTime}
+              onChange={handleSeek}
+              className="w-full h-1.5 bg-[#E6ECF8] dark:bg-white/10 rounded-full appearance-none cursor-pointer transition-all"
+              style={{
+                background: `linear-gradient(to right, ${config.primaryHex} ${progressPercent}%, ${isLight ? "#E6ECF8" : "rgba(255,255,255,0.1)"} ${progressPercent}%)`,
+                accentColor: config.primaryHex,
+              }}
+              role="slider"
+              aria-label="Seek track position"
+              aria-valuenow={currentTime}
+              aria-valuemin={0}
+              aria-valuemax={duration || 100}
+            />
+          </div>
+
+          <div className="flex justify-between text-xs font-numerals text-[#9AA3B5] px-0.5">
+            <span>{formatDuration(currentTime)}</span>
+            <span>{formatDuration(duration)}</span>
+          </div>
+        </div>
+
+        {/* ── CONTROLS ROW (Shuffle, Prev, Large Navy Play/Pause, Next, Queue) ─── */}
         <div
           ref={controlsBarRef}
           id="now-playing-controls-bar"
-          className="relative z-30 p-4 sm:p-5 rounded-3xl bg-zinc-900/60 backdrop-blur-xl border border-white/[0.08] shadow-xl space-y-4"
+          className="flex items-center justify-between px-2 pt-2"
         >
-          {/* Custom Pill Scrubber */}
-          <div className="space-y-1.5">
-            <div className="relative w-full flex items-center">
-              <input
-                type="range"
-                min={0}
-                max={duration || 100}
-                value={currentTime}
-                onChange={handleSeek}
-                className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer transition-all"
-                style={{
-                  background: `linear-gradient(to right, ${config.primaryHex} ${progressPercent}%, rgba(255,255,255,0.1) ${progressPercent}%)`,
-                  accentColor: config.primaryHex,
-                }}
+          {/* Shuffle Toggle */}
+          <button
+            type="button"
+            onClick={() => (onToggleShuffle ? onToggleShuffle() : handleShuffle())}
+            disabled={currentPlaylistFiles.length <= 1}
+            className={`p-2.5 rounded-full transition-all active:scale-90 ${
+              isShuffle
+                ? "text-[#2B4C8F] dark:text-[#6C95FF] bg-black/5 dark:bg-white/10 font-bold"
+                : "text-[#9AA3B5] hover:text-[#1A1F2C] dark:hover:text-white"
+            }`}
+            style={{ color: isShuffle ? config.primaryHex : undefined }}
+            title={isShuffle ? "Shuffle is ON" : "Shuffle is OFF"}
+          >
+            <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+              <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z" />
+            </svg>
+          </button>
+
+          {/* Previous Track */}
+          <button
+            type="button"
+            onClick={handlePlayPrevInActivePlaylist}
+            disabled={currentPlaylistFiles.length <= 1}
+            className="p-3 text-[#1A1F2C] dark:text-white disabled:opacity-30 rounded-full hover:bg-black/5 dark:hover:bg-white/5 active:scale-90 transition-all"
+            title="Previous Track"
+          >
+            <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
+              <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+            </svg>
+          </button>
+
+          {/* Center Play/Pause — Large Circular Navy Button */}
+          <button
+            type="button"
+            onClick={togglePlayPause}
+            className="w-16 h-16 rounded-full text-white flex items-center justify-center shadow-xl active:scale-95 transition-all"
+            style={{
+              backgroundColor: config.primaryHex,
+              boxShadow: `0 10px 28px -4px ${config.glow}`,
+            }}
+            title={isPlaying ? "Pause" : "Play"}
+          >
+            {isPlaying ? (
+              <svg className="w-7 h-7 fill-current" viewBox="0 0 24 24">
+                <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+              </svg>
+            ) : (
+              <svg className="w-7 h-7 ml-1 fill-current" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
+          </button>
+
+          {/* Next Track */}
+          <button
+            type="button"
+            onClick={handlePlayNextInActivePlaylist}
+            disabled={currentPlaylistFiles.length <= 1}
+            className="p-3 text-[#1A1F2C] dark:text-white disabled:opacity-30 rounded-full hover:bg-black/5 dark:hover:bg-white/5 active:scale-90 transition-all"
+            title="Next Track"
+          >
+            <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
+              <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+            </svg>
+          </button>
+
+          {/* Queue Sheet Trigger */}
+          <button
+            type="button"
+            onClick={() => setIsQueueOpen(true)}
+            className="p-2.5 rounded-full text-[#9AA3B5] hover:text-[#1A1F2C] dark:hover:text-white transition-all active:scale-90 relative"
+            title="View Queue"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h7" />
+            </svg>
+            {queueTracks.length > 0 && (
+              <span
+                className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full"
+                style={{ backgroundColor: config.primaryHex }}
               />
-            </div>
+            )}
+          </button>
+        </div>
+        {/* Auxiliary Controls (Repeat mode, Sleep timer, Volume) */}
+        <div className="flex items-center justify-between px-3 pt-1 text-xs text-[#9AA3B5]">
+          {/* Repeat Mode Toggle */}
+          <button
+            type="button"
+            onClick={() => (onToggleRepeat ? onToggleRepeat() : setIsRepeat(!isRepeat))}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[11px] font-semibold transition-all ${
+              (repeatMode ? repeatMode !== "off" : isRepeat)
+                ? isLight
+                  ? "bg-[#E6ECF8] text-[#2B4C8F] border-[#2B4C8F]/30"
+                  : "bg-[#202D4E] text-[#6C95FF] border-[#6C95FF]/40"
+                : "border-black/5 dark:border-white/10 hover:text-[#1A1F2C] dark:hover:text-white"
+            }`}
+            title="Repeat Mode"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span>{repeatMode === "one" ? "Repeat 1" : repeatMode === "all" || isRepeat ? "Repeat All" : "Repeat Off"}</span>
+          </button>
 
-            <div className="flex justify-between text-[11px] font-mono text-zinc-400 px-0.5">
-              <span>{formatDuration(currentTime)}</span>
-              <span>{formatDuration(duration)}</span>
-            </div>
-          </div>
-
-          {/* Minimalist Apple / Nothing Transport Controls */}
-          <div className="flex items-center justify-between sm:justify-around px-2 pt-1 relative">
-            {/* 3-State Repeat Toggle (off -> all -> one -> off) */}
-            <button
-              type="button"
-              onClick={() => (onToggleRepeat ? onToggleRepeat() : setIsRepeat(!isRepeat))}
-              className={`p-2.5 rounded-full text-sm transition-all active:scale-95 relative ${
-                (repeatMode ? repeatMode !== "off" : isRepeat)
-                  ? "bg-white/10 border border-white/20 shadow-sm"
-                  : "text-zinc-400 hover:text-white"
-              }`}
-              style={{
-                color: (repeatMode ? repeatMode !== "off" : isRepeat) ? config.primaryHex : undefined,
-              }}
-              title={
-                repeatMode === "one"
-                  ? "Repeat One (Click to turn off)"
-                  : repeatMode === "all" || isRepeat
-                  ? "Repeat All (Click for Repeat One)"
-                  : "Repeat Off (Click to turn on)"
-              }
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              {repeatMode === "one" && (
-                <span
-                  className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center text-zinc-950 shadow"
-                  style={{ backgroundColor: config.primaryHex }}
-                >
-                  1
-                </span>
-              )}
-            </button>
-
-            {/* Previous Track */}
-            <button
-              onClick={handlePlayPrevInActivePlaylist}
-              disabled={currentPlaylistFiles.length <= 1}
-              className="p-3 text-zinc-300 hover:text-white disabled:opacity-30 rounded-full hover:bg-white/5 active:scale-90 transition-all"
-              title="Previous Track"
-            >
-              <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
-                <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
-              </svg>
-            </button>
-
-            {/* Center Circular Play/Pause (Exclusively controls video and music) */}
-            <button
-              onClick={togglePlayPause}
-              className="w-16 h-16 rounded-full active:scale-95 text-white flex items-center justify-center shadow-xl border border-white/20 transition-all"
-              style={{
-                backgroundColor: config.primaryHex,
-                boxShadow: `0 10px 30px -5px ${config.glow}`,
-              }}
-              title={isPlaying ? "Pause" : "Play"}
-            >
-              {isPlaying ? (
-                <svg className="w-7 h-7 fill-current" viewBox="0 0 24 24">
-                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-                </svg>
-              ) : (
-                <svg className="w-7 h-7 ml-1 fill-current" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              )}
-            </button>
-
-            {/* Next Track */}
-            <button
-              onClick={handlePlayNextInActivePlaylist}
-              disabled={currentPlaylistFiles.length <= 1}
-              className="p-3 text-zinc-300 hover:text-white disabled:opacity-30 rounded-full hover:bg-white/5 active:scale-90 transition-all"
-              title="Next Track"
-            >
-              <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
-                <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
-              </svg>
-            </button>
-
-            {/* Shuffle in Active Playlist */}
-            <button
-              type="button"
-              onClick={() => (onToggleShuffle ? onToggleShuffle() : handleShuffle())}
-              disabled={currentPlaylistFiles.length <= 1}
-              className={`p-2.5 rounded-full transition-all active:scale-90 ${
-                isShuffle
-                  ? "bg-white/10 border border-white/20 shadow-sm"
-                  : "text-zinc-400 hover:text-white"
-              }`}
-              style={{ color: isShuffle ? config.primaryHex : undefined }}
-              title={isShuffle ? "Shuffle is ON" : "Shuffle is OFF"}
-            >
-              <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z" />
-              </svg>
-            </button>
-
-            {/* Unified Like Track Button */}
-            <LikeButton
-              size="lg"
-              track={currentFile}
-              onToggled={() => onToggleLike?.()}
-            />
-
-            {/* Queue Toggle Button */}
-            <button
-              type="button"
-              onClick={() => setIsQueueOpen(true)}
-              className="p-2.5 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 active:scale-90 transition-all relative"
-              title="View Queue"
-            >
-              <svg className="w-5 h-5 fill-none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h7" />
-              </svg>
-              {queueTracks.length > 0 && (
-                <span
-                  className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full"
-                  style={{ backgroundColor: config.primaryHex }}
-                />
-              )}
-            </button>
-
-            {/* Sleep Timer Menu */}
+          {/* Sleep Timer & Volume Controls */}
+          <div className="flex items-center gap-2">
+            {/* Sleep Timer */}
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setShowSleepMenu(!showSleepMenu)}
-                className={`p-2.5 rounded-full transition-all active:scale-90 ${
-                  sleepTimerMode ? "text-amber-400 bg-amber-400/15" : "text-zinc-400 hover:text-white"
+                className={`p-1.5 rounded-full transition-all ${
+                  sleepTimerMode ? "text-amber-500 bg-amber-500/15" : "text-[#9AA3B5] hover:text-[#1A1F2C] dark:hover:text-white"
                 }`}
-                title={sleepTimerMode ? `Sleep timer active (${sleepTimerMode})` : "Sleep Timer"}
+                title={sleepTimerMode ? `Sleep timer: ${sleepTimerMode}` : "Sleep Timer"}
               >
-                <svg className="w-5 h-5 fill-none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
                 </svg>
               </button>
               {showSleepMenu && onSetSleepTimer && (
                 <div
-                  className="absolute bottom-12 right-0 w-36 bg-zinc-950 border border-white/15 rounded-2xl p-1.5 shadow-2xl z-50 space-y-1 animate-in fade-in zoom-in-95 duration-150"
+                  className={`absolute bottom-8 right-0 w-36 rounded-2xl p-1.5 shadow-2xl z-50 space-y-1 border ${
+                    isLight ? "bg-white border-slate-200" : "bg-[#161C2E] border-white/15"
+                  }`}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <button
                     type="button"
                     onClick={() => { onSetSleepTimer(null); setShowSleepMenu(false); }}
-                    className={`w-full text-left px-3 py-1.5 text-xs rounded-xl transition-colors ${
-                      !sleepTimerMode ? "text-white bg-white/10" : "text-zinc-400 hover:text-white hover:bg-white/5"
-                    }`}
+                    className="w-full text-left px-3 py-1.5 text-xs rounded-xl hover:bg-black/5 dark:hover:bg-white/10"
                   >
                     Off
                   </button>
                   <button
                     type="button"
                     onClick={() => { onSetSleepTimer("15"); setShowSleepMenu(false); }}
-                    className={`w-full text-left px-3 py-1.5 text-xs rounded-xl transition-colors ${
-                      sleepTimerMode === "15" ? "text-amber-400 bg-amber-400/10" : "text-zinc-300 hover:text-white hover:bg-white/5"
-                    }`}
+                    className={`w-full text-left px-3 py-1.5 text-xs rounded-xl ${sleepTimerMode === "15" ? "font-bold text-amber-500" : "hover:bg-black/5 dark:hover:bg-white/10"}`}
                   >
-                    15 minutes
+                    15 min
                   </button>
                   <button
                     type="button"
                     onClick={() => { onSetSleepTimer("30"); setShowSleepMenu(false); }}
-                    className={`w-full text-left px-3 py-1.5 text-xs rounded-xl transition-colors ${
-                      sleepTimerMode === "30" ? "text-amber-400 bg-amber-400/10" : "text-zinc-300 hover:text-white hover:bg-white/5"
-                    }`}
+                    className={`w-full text-left px-3 py-1.5 text-xs rounded-xl ${sleepTimerMode === "30" ? "font-bold text-amber-500" : "hover:bg-black/5 dark:hover:bg-white/10"}`}
                   >
-                    30 minutes
+                    30 min
                   </button>
                   <button
                     type="button"
                     onClick={() => { onSetSleepTimer("60"); setShowSleepMenu(false); }}
-                    className={`w-full text-left px-3 py-1.5 text-xs rounded-xl transition-colors ${
-                      sleepTimerMode === "60" ? "text-amber-400 bg-amber-400/10" : "text-zinc-300 hover:text-white hover:bg-white/5"
-                    }`}
+                    className={`w-full text-left px-3 py-1.5 text-xs rounded-xl ${sleepTimerMode === "60" ? "font-bold text-amber-500" : "hover:bg-black/5 dark:hover:bg-white/10"}`}
                   >
-                    60 minutes
+                    60 min
                   </button>
                   <button
                     type="button"
                     onClick={() => { onSetSleepTimer("track_end"); setShowSleepMenu(false); }}
-                    className={`w-full text-left px-3 py-1.5 text-xs rounded-xl transition-colors ${
-                      sleepTimerMode === "track_end" ? "text-amber-400 bg-amber-400/10" : "text-zinc-300 hover:text-white hover:bg-white/5"
-                    }`}
+                    className={`w-full text-left px-3 py-1.5 text-xs rounded-xl ${sleepTimerMode === "track_end" ? "font-bold text-amber-500" : "hover:bg-black/5 dark:hover:bg-white/10"}`}
                   >
                     End of Track
                   </button>
@@ -898,46 +920,36 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
               )}
             </div>
 
-            {/* Dynamic Volume Control (Double-click/tap: Mute/Unmute, Click/Tap: Adjust vertical slider) */}
-            <div id="volume-slider-container" className="relative z-40">
+            {/* Volume Button */}
+            <div id="volume-slider-container" className="relative">
               <button
                 onClick={handleVolumeButtonClick}
                 onDoubleClick={toggleMute}
-                className={`p-2.5 rounded-full transition-all active:scale-95 ${
-                  showVolumeSlider
-                    ? "bg-white/15 shadow-sm ring-1 ring-white/20"
-                    : isMuted
-                    ? "text-red-400 bg-red-500/15"
-                    : "text-zinc-400 hover:text-white"
-                }`}
-                style={{
-                  color: showVolumeSlider ? config.primaryHex : undefined,
-                }}
-                title="Double-click/tap to mute/unmute, click/tap to adjust volume"
+                className="p-1.5 rounded-full text-[#9AA3B5] hover:text-[#1A1F2C] dark:hover:text-white transition-all"
+                title="Adjust volume"
               >
                 {isMuted || volume === 0 ? (
-                  <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                     <path strokeLinecap="round" strokeLinejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
                   </svg>
                 ) : (
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                   </svg>
                 )}
               </button>
 
-              {/* Vertical Popover Slider - Touch & Pointer Universal */}
               {showVolumeSlider && (
                 <div
-                  className="absolute bottom-14 right-0 z-50 bg-zinc-950/95 backdrop-blur-2xl border border-white/20 rounded-2xl p-3 shadow-2xl shadow-black flex flex-col items-center gap-2.5 animate-in fade-in zoom-in-95 duration-150 w-14 select-none"
+                  className={`absolute bottom-8 right-0 z-50 rounded-2xl p-3 shadow-2xl flex flex-col items-center gap-2 w-14 select-none border ${
+                    isLight ? "bg-white border-slate-200" : "bg-[#161C2E] border-white/15"
+                  }`}
                   style={{ touchAction: "none" }}
                 >
-                  <span className="text-[10px] font-mono font-bold text-zinc-300">
+                  <span className="text-[10px] font-mono font-bold text-[#1A1F2C] dark:text-white">
                     {isMuted ? "0%" : `${Math.round(volume * 100)}%`}
                   </span>
-
-                  {/* Vertical Interactive Track */}
                   <div
                     ref={volumeTrackRef}
                     onPointerDown={handleVolumePointerDown}
@@ -945,33 +957,20 @@ export const NowPlayingSection = forwardRef<NowPlayingSectionHandle, NowPlayingS
                     onPointerUp={handleVolumePointerUp}
                     onPointerCancel={handleVolumePointerUp}
                     className="relative w-8 h-28 flex items-center justify-center cursor-pointer py-1"
-                    style={{ touchAction: "none" }}
                   >
-                    {/* Groove */}
-                    <div className="w-2.5 h-full bg-white/10 rounded-full overflow-hidden relative flex flex-col justify-end pointer-events-none">
-                      {/* Active Volume Fill */}
+                    <div className="w-2.5 h-full bg-slate-200 dark:bg-white/10 rounded-full overflow-hidden relative flex flex-col justify-end pointer-events-none">
                       <div
                         className="w-full rounded-full transition-all duration-75"
                         style={{
                           height: `${isMuted ? 0 : Math.round(volume * 100)}%`,
                           backgroundColor: config.primaryHex,
-                          boxShadow: `0 0 8px ${config.glow}`,
                         }}
                       />
                     </div>
-
-                    {/* Draggable Knob */}
-                    <div
-                      className="absolute left-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white shadow-lg border border-white/40 pointer-events-none transition-all duration-75"
-                      style={{
-                        bottom: `calc(${isMuted ? 0 : Math.round(volume * 100)}% - 8px)`,
-                      }}
-                    />
                   </div>
-
                   <button
                     onClick={toggleMute}
-                    className="text-[10px] font-bold text-zinc-400 hover:text-white transition-colors px-1 py-0.5 rounded hover:bg-white/10"
+                    className="text-[10px] font-bold text-[#9AA3B5] hover:text-[#1A1F2C] dark:hover:text-white transition-colors"
                   >
                     {isMuted ? "Unmute" : "Mute"}
                   </button>

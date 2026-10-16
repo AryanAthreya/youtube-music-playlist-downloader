@@ -75,13 +75,13 @@ export function RecentAndActiveSection({
       } else if (activeTab === "popular") {
         const list = await getMostPlayedTracks(6);
         if (list.length > 0) {
-          setTabTracks(list.map(trackRecordToFileInfo));
+          setTabTracks(list.map((item) => trackRecordToFileInfo(item.track)));
         } else {
           setTabTracks(recentFiles.slice(0, 6));
         }
       } else if (activeTab === "liked") {
-        const list = await getLikedTracks(6);
-        setTabTracks(list.map(trackRecordToFileInfo));
+        const list = await getLikedTracks();
+        setTabTracks(list.slice(0, 6).map(trackRecordToFileInfo));
       }
     } catch {
       setTabTracks(recentFiles.slice(0, 6));
