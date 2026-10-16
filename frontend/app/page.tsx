@@ -551,8 +551,45 @@ function HomePageContent() {
       </div>
 
       <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-1">
-        {/* Top Header */}
-        <header className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-6 mb-6 border-b border-white/[0.06]">
+        {/* Mobile Top Header (Reference Design: Hamburger, Centered Screen Title, Kebab) */}
+        <header className="flex md:hidden items-center justify-between pb-3 mb-4">
+          <button
+            type="button"
+            onClick={() => setIsThemeModalOpen(true)}
+            className="p-2 -ml-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/10 active:scale-95 transition-all"
+            aria-label="Menu"
+          >
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+
+          <h2 className="text-base font-bold tracking-tight text-slate-900 dark:text-white font-quicksand">
+            {activeTab === "downloader"
+              ? "Discover"
+              : activeTab === "history"
+              ? "Musics"
+              : activeTab === "playlists"
+              ? "Playlists"
+              : "Player"}
+          </h2>
+
+          <button
+            type="button"
+            onClick={() => setIsThemeModalOpen(true)}
+            className="p-2 -mr-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/10 active:scale-95 transition-all"
+            aria-label="Settings"
+          >
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+              <circle cx="12" cy="5" r="1.75" />
+              <circle cx="12" cy="12" r="1.75" />
+              <circle cx="12" cy="19" r="1.75" />
+            </svg>
+          </button>
+        </header>
+
+        {/* Desktop Top Header (>= md) */}
+        <header className="hidden md:flex items-center justify-between gap-4 pb-6 mb-6 border-b border-slate-200/80 dark:border-white/[0.08]">
           <div className="flex items-center gap-3">
             <div
               className={`w-11 h-11 rounded-2xl bg-gradient-to-tr ${config.gradient} flex items-center justify-center shadow-lg shrink-0`}
@@ -563,31 +600,31 @@ function HomePageContent() {
               </svg>
             </div>
             <div>
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
-                <span>YT Downloader</span>
-                <span className="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full bg-white/10 text-zinc-300 border border-white/20">
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2 font-quicksand">
+                <span>YT Music</span>
+                <span className="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-zinc-300 border border-slate-300 dark:border-white/20">
                   Pro
                 </span>
               </h1>
-              <p className="text-xs text-gray-400">Direct yt-dlp & FFmpeg Local Engine</p>
+              <p className="text-xs text-slate-500 dark:text-gray-400">Direct yt-dlp & FFmpeg Local Engine</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Navigation Tabs (Hidden on mobile) */}
-            <div className={`hidden sm:flex items-center gap-1.5 p-1 rounded-2xl ${config.navBg} border glass-card`}>
+            {/* Desktop Navigation Tabs */}
+            <div className={`flex items-center gap-1.5 p-1 rounded-2xl ${config.navBg} border shadow-sm`}>
               <button
                 onClick={() => setActiveTab("downloader")}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
                   activeTab === "downloader" || activeTab === "player"
                     ? `bg-gradient-to-r ${config.gradient} text-white shadow-md`
-                    : "text-gray-400 hover:text-white"
+                    : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
                 }`}
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                 </svg>
-                <span>Downloader</span>
+                <span>Discover</span>
               </button>
 
               <button
@@ -595,13 +632,14 @@ function HomePageContent() {
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
                   activeTab === "history"
                     ? `bg-gradient-to-r ${config.gradient} text-white shadow-md`
-                    : "text-gray-400 hover:text-white"
+                    : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
                 }`}
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  <circle cx="12" cy="12" r="9" />
+                  <circle cx="12" cy="12" r="4" />
                 </svg>
-                <span>Downloads History</span>
+                <span>Music Library</span>
                 {historyCount > 0 && (
                   <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-white/20 text-white">
                     {historyCount}
@@ -615,11 +653,11 @@ function HomePageContent() {
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
                   activeTab === "playlists"
                     ? `bg-gradient-to-r ${config.gradient} text-white shadow-md`
-                    : "text-gray-400 hover:text-white"
+                    : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
                 }`}
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                 </svg>
                 <span>Playlists</span>
               </button>

@@ -17,19 +17,28 @@ export function BottomNavBar({
   hasActiveTrack,
   onOpenSettings,
 }: BottomNavBarProps) {
-  const { config } = useTheme();
+  const { config, theme } = useTheme();
+  const isLight = config.isLight || theme === "soft-light";
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-slate-950/90 backdrop-blur-xl border-t border-white/10 px-3 py-2"
+      className={`fixed bottom-0 left-0 right-0 z-50 md:hidden px-4 py-2.5 transition-all duration-300 border-t ${
+        isLight
+          ? "bg-white/95 border-[#E2E8F0] shadow-[0_-8px_25px_rgba(35,55,110,0.08)]"
+          : "bg-[#161C2E]/95 border-white/10 shadow-[0_-8px_30px_rgba(0,0,0,0.5)]"
+      } backdrop-blur-2xl`}
       aria-label="Mobile Navigation Bar"
     >
-      {/* Subtle Settings Gear Icon beside top right of footer */}
+      {/* Settings trigger */}
       {onOpenSettings && (
         <button
           id="mobile-footer-settings-button"
           onClick={onOpenSettings}
-          className="absolute -top-3.5 right-3 p-1.5 rounded-full bg-zinc-900/90 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-white/15 shadow-lg backdrop-blur-md active:scale-95 transition-all"
+          className={`absolute -top-3.5 right-4 p-1.5 rounded-full border shadow-md active:scale-95 transition-all ${
+            isLight
+              ? "bg-white text-slate-500 hover:text-slate-800 border-slate-200"
+              : "bg-[#1E263D] text-slate-300 hover:text-white border-white/15"
+          }`}
           title="Settings & Appearance"
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -39,82 +48,131 @@ export function BottomNavBar({
         </button>
       )}
 
-      <div className="flex items-center justify-around max-w-md mx-auto">
-        {/* Downloader Tab */}
+      <div className="flex items-center justify-around max-w-sm mx-auto">
+        {/* 1. Discover / Home Tab */}
         <button
           onClick={() => onChangeTab("downloader")}
-          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl transition-all ${
-            activeTab === "downloader"
-              ? "font-bold scale-105"
-              : "text-gray-400 hover:text-gray-200"
+          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all duration-200 active:scale-95 ${
+            activeTab === "downloader" ? "font-bold" : "text-[#9AA3B5] hover:text-[#1A1F2C] dark:hover:text-[#EAF0FF]"
           }`}
           style={{ color: activeTab === "downloader" ? config.primaryHex : undefined }}
         >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-          </svg>
-          <span className="text-[10px]">Download</span>
+          <div
+            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+              activeTab === "downloader"
+                ? isLight
+                  ? "bg-[#E6ECF8] shadow-sm ring-2 ring-[#2B4C8F]/20"
+                  : "bg-[#202D4E] shadow-sm ring-2 ring-[#6C95FF]/30"
+                : ""
+            }`}
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={activeTab === "downloader" ? 2.5 : 1.75}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+          </div>
+          {activeTab === "downloader" && (
+            <span className="text-[10px] tracking-tight animate-in fade-in duration-200">
+              Discover
+            </span>
+          )}
         </button>
 
-        {/* Library Tab */}
+        {/* 2. Music / Library Tab */}
         <button
           onClick={() => onChangeTab("history")}
-          className={`relative flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl transition-all ${
-            activeTab === "history"
-              ? "font-bold scale-105"
-              : "text-gray-400 hover:text-gray-200"
+          className={`relative flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all duration-200 active:scale-95 ${
+            activeTab === "history" ? "font-bold" : "text-[#9AA3B5] hover:text-[#1A1F2C] dark:hover:text-[#EAF0FF]"
           }`}
           style={{ color: activeTab === "history" ? config.primaryHex : undefined }}
         >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-          </svg>
-          <span className="text-[10px]">Library</span>
+          <div
+            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+              activeTab === "history"
+                ? isLight
+                  ? "bg-[#E6ECF8] shadow-sm ring-2 ring-[#2B4C8F]/20"
+                  : "bg-[#202D4E] shadow-sm ring-2 ring-[#6C95FF]/30"
+                : ""
+            }`}
+          >
+            {/* Concentric rings disc icon matching reference design */}
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={activeTab === "history" ? 2.5 : 1.75}>
+              <circle cx="12" cy="12" r="9" />
+              <circle cx="12" cy="12" r="4" />
+              <circle cx="12" cy="12" r="1" fill="currentColor" />
+            </svg>
+          </div>
           {fileCount > 0 && (
             <span
-              className="absolute top-0 right-1 text-[9px] font-bold px-1 rounded-full text-white leading-tight"
+              className="absolute top-1 right-2 text-[8px] font-bold px-1 rounded-full text-white leading-tight shadow-sm"
               style={{ backgroundColor: config.primaryHex }}
             >
               {fileCount}
             </span>
           )}
+          {activeTab === "history" && (
+            <span className="text-[10px] tracking-tight animate-in fade-in duration-200">
+              Music
+            </span>
+          )}
         </button>
 
-        {/* Playlists Tab (Matching Image 2 Reference) */}
+        {/* 3. Liked Songs / Playlists Tab (Heart icon from reference design) */}
         <button
           onClick={() => onChangeTab("playlists")}
-          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl transition-all ${
-            activeTab === "playlists"
-              ? "font-bold scale-105"
-              : "text-gray-400 hover:text-gray-200"
+          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all duration-200 active:scale-95 ${
+            activeTab === "playlists" ? "font-bold" : "text-[#9AA3B5] hover:text-[#1A1F2C] dark:hover:text-[#EAF0FF]"
           }`}
           style={{ color: activeTab === "playlists" ? config.primaryHex : undefined }}
         >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-          </svg>
-          <span className="text-[10px]">Playlists</span>
+          <div
+            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+              activeTab === "playlists"
+                ? isLight
+                  ? "bg-[#E6ECF8] shadow-sm ring-2 ring-[#2B4C8F]/20"
+                  : "bg-[#202D4E] shadow-sm ring-2 ring-[#6C95FF]/30"
+                : ""
+            }`}
+          >
+            <svg className="w-5 h-5" fill={activeTab === "playlists" ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+            </svg>
+          </div>
+          {activeTab === "playlists" && (
+            <span className="text-[10px] tracking-tight animate-in fade-in duration-200">
+              Playlists
+            </span>
+          )}
         </button>
 
-        {/* Player Tab */}
+        {/* 4. Player Tab */}
         <button
           onClick={() => onChangeTab("player")}
-          className={`relative flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl transition-all ${
-            activeTab === "player"
-              ? "font-bold scale-105"
-              : "text-gray-400 hover:text-gray-200"
+          className={`relative flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all duration-200 active:scale-95 ${
+            activeTab === "player" ? "font-bold" : "text-[#9AA3B5] hover:text-[#1A1F2C] dark:hover:text-[#EAF0FF]"
           }`}
           style={{ color: activeTab === "player" ? config.primaryHex : undefined }}
         >
-          <div className="relative">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+          <div
+            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+              activeTab === "player"
+                ? isLight
+                  ? "bg-[#E6ECF8] shadow-sm ring-2 ring-[#2B4C8F]/20"
+                  : "bg-[#202D4E] shadow-sm ring-2 ring-[#6C95FF]/30"
+                : ""
+            }`}
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={activeTab === "player" ? 2.5 : 1.75}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
             </svg>
             {hasActiveTrack && (
-              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
             )}
           </div>
-          <span className="text-[10px]">Player</span>
+          {activeTab === "player" && (
+            <span className="text-[10px] tracking-tight animate-in fade-in duration-200">
+              Player
+            </span>
+          )}
         </button>
       </div>
     </nav>
