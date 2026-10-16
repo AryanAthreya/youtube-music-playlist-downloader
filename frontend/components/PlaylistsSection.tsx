@@ -58,7 +58,9 @@ export function PlaylistsSection({
   onSelectTrack,
   currentPlayingFile,
 }: PlaylistsSectionProps) {
-  const { config } = useTheme();
+  const { config, theme } = useTheme();
+  const isLight = config.isLight || theme === "soft-light";
+
   const [customPlaylists, setCustomPlaylists] = useState<PlaylistRecord[]>([]);
   const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
@@ -119,39 +121,35 @@ export function PlaylistsSection({
         }
         setDbTracksMap(map);
       }
-    } catch (e) {
-      console.warn("Failed to load playlists", e);
-      const fallback = getStoredPlaylists();
-      setCustomPlaylists(fallback);
+    } catch (err) {
+      console.warn("Failed to load custom playlists:", err);
     }
   }, []);
 
-  // Load playlists and listen for sync updates
   useEffect(() => {
-    loadCustomPlaylists();
     loadSmartPlaylists();
+    loadCustomPlaylists();
 
-    const handlePlaylistsUpdate = () => loadCustomPlaylists();
-    const handleSmartUpdate = () => loadSmartPlaylists();
+    const handleUpdate = () => {
+      loadSmartPlaylists();
+      loadCustomPlaylists();
+    };
 
-    window.addEventListener("ytdl_playlists_updated", handlePlaylistsUpdate);
-    window.addEventListener("ytdl_history_updated", handleSmartUpdate);
-    window.addEventListener("ytdl_liked_changed", handleSmartUpdate);
-    window.addEventListener("ytdl_offline_updated", handleSmartUpdate);
-    window.addEventListener("storage", handlePlaylistsUpdate);
+    window.addEventListener("ytdl_playlists_updated", handleUpdate);
+    window.addEventListener("ytdl_history_updated", handleUpdate);
+    window.addEventListener("ytdl_liked_changed", handleUpdate);
+    window.addEventListener("ytdl_offline_updated", handleUpdate);
 
     return () => {
-      window.removeEventListener("ytdl_playlists_updated", handlePlaylistsUpdate);
-      window.removeEventListener("ytdl_history_updated", handleSmartUpdate);
-      window.removeEventListener("ytdl_liked_changed", handleSmartUpdate);
-      window.removeEventListener("ytdl_offline_updated", handleSmartUpdate);
-      window.removeEventListener("storage", handlePlaylistsUpdate);
+      window.removeEventListener("ytdl_playlists_updated", handleUpdate);
+      window.removeEventListener("ytdl_history_updated", handleUpdate);
+      window.removeEventListener("ytdl_liked_changed", handleUpdate);
+      window.removeEventListener("ytdl_offline_updated", handleUpdate);
     };
-  }, [loadCustomPlaylists, loadSmartPlaylists]);
+  }, [loadSmartPlaylists, loadCustomPlaylists]);
 
   const savePlaylists = async (updated: PlaylistRecord[]) => {
     setCustomPlaylists(updated);
-    saveStoredPlaylists(updated);
     await saveAllPlaylists(updated);
   };
 
@@ -162,11 +160,11 @@ export function PlaylistsSection({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `yt_music_playlists_${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `music_playlists_backup_${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (e) {
-      alert("Failed to export playlists: " + String(e));
+    } catch (err) {
+      alert("Failed to export playlists: " + String(err));
     }
   };
 
@@ -175,26 +173,25 @@ export function PlaylistsSection({
     if (!file) return;
     try {
       const text = await file.text();
-      const res = await importPlaylistsFromJson(text);
+      await importPlaylistsFromJson(text);
       await loadCustomPlaylists();
-      alert(`Successfully imported ${res.imported} playlist(s)!`);
-    } catch (e) {
-      alert("Failed to import playlists: " + String(e));
-    } finally {
-      e.target.value = "";
+      await loadSmartPlaylists();
+      alert("Playlists imported successfully!");
+    } catch (err) {
+      alert("Failed to import playlists: " + String(err));
     }
+    e.target.value = "";
   };
 
   const handleCreatePlaylist = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = newPlaylistName.trim();
-    if (!trimmed) return;
+    if (!newPlaylistName.trim()) return;
     const newPl: PlaylistRecord = {
-      id: `pl-${Date.now()}`,
-      name: trimmed,
+      id: "pl-" + Date.now(),
+      name: newPlaylistName.trim(),
       kind: "user",
-      trackIds: [],
       songFilenames: [],
+      trackIds: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -274,7 +271,7 @@ export function PlaylistsSection({
     }
   };
 
-  // Compile Smart Playlists (Liked Songs at the top)
+  // Compile Smart Playlists (Liked Songs pinned first)
   const smartPlaylists = useMemo(() => {
     return [
       {
@@ -284,6 +281,7 @@ export function PlaylistsSection({
         icon: "❤️",
         isSystem: true,
         isSmart: true,
+        gradient: "from-[#EC4899] via-[#8B5CF6] to-[#2B4C8F]",
         description: "All tracks you have marked with heart",
       },
       {
@@ -293,6 +291,7 @@ export function PlaylistsSection({
         icon: "🕒",
         isSystem: true,
         isSmart: true,
+        gradient: "from-[#3B82F6] to-[#1D4ED8]",
         description: "Tracks listened for at least 15 seconds",
       },
       {
@@ -302,15 +301,17 @@ export function PlaylistsSection({
         icon: "🔥",
         isSystem: true,
         isSmart: true,
+        gradient: "from-[#F97316] to-[#EA580C]",
         description: "Your most frequently played tracks",
       },
       {
         id: "smart-offline",
         name: "Saved Offline",
         tracks: offlineTracks,
-        icon: "💾",
+        icon: "⚡",
         isSystem: true,
         isSmart: true,
+        gradient: "from-[#10B981] to-[#059669]",
         description: "Tracks cached in browser IndexedDB storage",
       },
     ];
@@ -431,7 +432,11 @@ export function PlaylistsSection({
         <div className="flex items-center justify-between gap-4">
           <button
             onClick={() => setActivePlaylistId(null)}
-            className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-zinc-400 hover:text-white transition-colors p-2 -ml-2 rounded-xl hover:bg-white/5 active:scale-95"
+            className={`flex items-center gap-2 text-xs sm:text-sm font-bold transition-all px-3 py-2 rounded-2xl active:scale-95 ${
+              isLight
+                ? "text-slate-600 hover:text-slate-900 bg-white border border-[#E2E8F0] shadow-sm"
+                : "text-slate-300 hover:text-white bg-[#161C2E] border border-white/10"
+            }`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -442,20 +447,26 @@ export function PlaylistsSection({
           {!selectedPlaylist.isSystem && (
             <button
               onClick={() => handleDeletePlaylist(selectedPlaylist.id)}
-              className="text-xs text-zinc-500 hover:text-red-400 p-2 rounded-xl hover:bg-red-500/10 transition-colors flex items-center gap-1.5"
+              className="text-xs text-red-500 hover:text-red-600 px-3 py-1.5 rounded-xl hover:bg-red-500/10 transition-colors flex items-center gap-1.5 font-bold"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
-              <span>Delete Playlist</span>
+              <span>Delete</span>
             </button>
           )}
         </div>
 
         {/* Playlist Hero Banner */}
-        <div className="relative rounded-3xl overflow-hidden glass-card p-6 sm:p-8 flex flex-col sm:flex-row items-center sm:items-end gap-6 shadow-2xl border border-white/10">
+        <div
+          className={`relative rounded-[28px] overflow-hidden p-6 sm:p-8 flex flex-col sm:flex-row items-center sm:items-end gap-6 border transition-all ${
+            isLight
+              ? "bg-white border-[#E2E8F0] shadow-[0_12px_32px_rgba(35,55,110,0.08)]"
+              : "bg-[#161C2E] border-white/10 shadow-[0_16px_36px_rgba(0,0,0,0.4)]"
+          }`}
+        >
           {/* Cover Art */}
-          <div className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-2xl overflow-hidden bg-zinc-900 shadow-2xl border border-white/15 shrink-0 group">
+          <div className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-[24px] overflow-hidden bg-slate-900 shadow-xl border border-black/5 dark:border-white/10 shrink-0 group">
             {topThumbnail ? (
               <img
                 src={resolveMediaUrl(topThumbnail)}
@@ -463,43 +474,58 @@ export function PlaylistsSection({
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
               />
             ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 via-zinc-950 to-black text-5xl">
+              <div
+                className={`w-full h-full flex flex-col items-center justify-center text-5xl bg-gradient-to-br ${
+                  (selectedPlaylist as any).gradient || "from-slate-800 to-slate-950"
+                }`}
+              >
                 <span>{selectedPlaylist.icon}</span>
               </div>
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none" />
           </div>
 
           {/* Details & Actions */}
           <div className="flex-1 space-y-3 text-center sm:text-left">
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-              <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 font-bold px-2.5 py-1 rounded-full bg-white/10 border border-white/10 inline-block">
+              <span
+                className={`text-[10px] font-mono uppercase tracking-wider font-bold px-3 py-1 rounded-full border ${
+                  isLight
+                    ? "bg-[#E6ECF8] text-[#2B4C8F] border-[#2B4C8F]/20"
+                    : "bg-white/10 text-white border-white/15"
+                }`}
+              >
                 {selectedPlaylist.isSmart
-                  ? "Smart Playlist"
+                  ? "Smart Collection"
                   : isYtImport
                   ? "YouTube Import"
                   : selectedPlaylist.isSystem
                   ? "System Playlist"
-                  : "User Playlist"}
+                  : "Custom Playlist"}
               </span>
               {isYtImport && (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/30">
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-red-500/15 text-red-500 border border-red-500/30">
                   YouTube Sync
                 </span>
               )}
             </div>
 
-            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            <h1
+              className={`text-2xl sm:text-3xl font-black tracking-tight ${
+                isLight ? "text-[#1A1F2C]" : "text-white"
+              }`}
+              style={{ fontFamily: "var(--font-quicksand), sans-serif" }}
+            >
               {selectedPlaylist.name}
             </h1>
 
-            <p className="text-xs text-zinc-400">
+            <p className="text-xs text-[#8E99AE] font-medium">
               {selectedPlaylist.tracks.length} {selectedPlaylist.tracks.length === 1 ? "track" : "tracks"}
               {totalSize > 0 && ` • ${formatFileSize(totalSize)} total`}
             </p>
 
-            {/* Actions: Play All, Shuffle All, YouTube Refresh */}
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 pt-2">
+            {/* Actions: Play All, Shuffle All, Save All Offline */}
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 pt-2">
               <button
                 onClick={() => {
                   if (selectedPlaylist.tracks.length > 0) {
@@ -507,7 +533,8 @@ export function PlaylistsSection({
                   }
                 }}
                 disabled={selectedPlaylist.tracks.length === 0}
-                className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r ${config.gradient} text-white text-xs font-bold shadow-lg disabled:opacity-40 disabled:pointer-events-none active:scale-95 transition-all`}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-white text-xs font-bold shadow-md disabled:opacity-40 disabled:pointer-events-none active:scale-95 transition-all"
+                style={{ backgroundColor: config.primaryHex }}
               >
                 <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z" />
@@ -523,7 +550,11 @@ export function PlaylistsSection({
                   }
                 }}
                 disabled={selectedPlaylist.tracks.length <= 1}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold border border-white/10 disabled:opacity-40 disabled:pointer-events-none active:scale-95 transition-all"
+                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-bold border disabled:opacity-40 disabled:pointer-events-none active:scale-95 transition-all ${
+                  isLight
+                    ? "bg-[#F3F5FA] hover:bg-[#E6ECF8] border-[#E2E8F0] text-slate-700"
+                    : "bg-white/10 hover:bg-white/15 border-white/10 text-white"
+                }`}
               >
                 <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
                   <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z" />
@@ -537,10 +568,10 @@ export function PlaylistsSection({
                   type="button"
                   onClick={() => handleSaveAllOffline(selectedPlaylist.tracks)}
                   disabled={isSavingAllOffline}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-all active:scale-95 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all active:scale-95 disabled:opacity-50"
                   title="Save all tracks in this playlist for offline listening"
                 >
-                  <span>💾</span>
+                  <span>⚡</span>
                   <span>
                     {isSavingAllOffline
                       ? `Saving ${savingOfflineProgress.current}/${savingOfflineProgress.total}...`
@@ -554,11 +585,10 @@ export function PlaylistsSection({
                   type="button"
                   onClick={() => handleRefreshYouTubePlaylist((selectedPlaylist as any).rawRecord)}
                   disabled={isRefreshingYt}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 text-xs font-bold transition-all active:scale-95 disabled:opacity-50"
-                  title="Check YouTube for updated tracks in this playlist"
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-red-500/15 hover:bg-red-500/25 text-red-500 border border-red-500/30 text-xs font-bold transition-all active:scale-95 disabled:opacity-50"
                 >
                   <span className={isRefreshingYt ? "animate-spin inline-block" : ""}>🔄</span>
-                  <span>{isRefreshingYt ? "Refreshing..." : "Refresh Playlist"}</span>
+                  <span>{isRefreshingYt ? "Refreshing..." : "Refresh"}</span>
                 </button>
               )}
             </div>
@@ -568,18 +598,24 @@ export function PlaylistsSection({
         {/* Track List */}
         <div className="space-y-2">
           <div className="flex items-center justify-between px-1">
-            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-zinc-400">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[#8E99AE]">
               Tracks ({selectedPlaylist.tracks.length})
             </h3>
-            <span className="text-[11px] text-zinc-500">Click any track to stream</span>
+            <span className="text-[11px] text-[#8E99AE]">Click any track to stream</span>
           </div>
 
           {selectedPlaylist.tracks.length === 0 ? (
-            <div className="p-8 text-center rounded-2xl border border-white/10 glass-card space-y-2">
+            <div
+              className={`p-8 text-center rounded-[24px] border ${
+                isLight ? "bg-white border-[#E2E8F0]" : "bg-[#161C2E] border-white/10"
+              } space-y-2`}
+            >
               <span className="text-3xl">📭</span>
-              <p className="text-sm text-zinc-400">This playlist is currently empty.</p>
-              <p className="text-xs text-zinc-500">
-                Play or like tracks online, or add songs from your Downloads History to populate it.
+              <p className={`text-sm font-bold ${isLight ? "text-slate-800" : "text-white"}`}>
+                This playlist is currently empty.
+              </p>
+              <p className="text-xs text-[#8E99AE]">
+                Play or like tracks, or add songs from your Downloads History to populate it.
               </p>
             </div>
           ) : (
@@ -592,24 +628,30 @@ export function PlaylistsSection({
                 <div
                   key={`${track.filename || track.youtube_id}-${idx}`}
                   onClick={() => onSelectTrack(track, selectedPlaylist.tracks, selectedPlaylist.name)}
-                  className={`group flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-all ${
+                  className={`group flex items-center justify-between p-3 rounded-[20px] cursor-pointer transition-all border ${
                     isPlaying
-                      ? "bg-white/10 border border-white/20 shadow-lg shadow-black/30"
-                      : "glass-card hover:border-white/20"
+                      ? isLight
+                        ? "bg-[#E6ECF8] border-[#2B4C8F]/30 shadow-md"
+                        : "bg-white/15 border-white/20 shadow-md"
+                      : isLight
+                      ? "bg-white border-[#E2E8F0] hover:border-[#2B4C8F]/30 hover:shadow-sm"
+                      : "bg-[#161C2E] border-white/10 hover:border-white/20"
                   }`}
                 >
                   <div className="flex items-center gap-3.5 min-w-0 flex-1">
                     {/* Track Number */}
-                    <span className="w-6 text-center text-xs font-mono font-bold text-zinc-500 shrink-0">
+                    <span className="w-6 text-center text-xs font-mono font-bold text-[#8E99AE] shrink-0">
                       {isPlaying ? (
-                        <span className={`${config.textAccent} animate-pulse`}>▶</span>
+                        <span style={{ color: config.primaryHex }} className="animate-pulse">
+                          ▶
+                        </span>
                       ) : (
                         idx + 1
                       )}
                     </span>
 
-                    {/* Artwork */}
-                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-zinc-900 border border-white/10 shrink-0 relative">
+                    {/* Squircle Thumbnail */}
+                    <div className="w-10 h-10 rounded-[14px] overflow-hidden bg-slate-900 border border-black/5 dark:border-white/10 shrink-0 relative">
                       {track.thumbnail_url ? (
                         <img
                           src={resolveMediaUrl(track.thumbnail_url)}
@@ -618,7 +660,7 @@ export function PlaylistsSection({
                           loading="lazy"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-xs text-zinc-500">
+                        <div className="w-full h-full flex items-center justify-center text-xs text-[#8E99AE]">
                           🎵
                         </div>
                       )}
@@ -627,14 +669,20 @@ export function PlaylistsSection({
                     {/* Metadata */}
                     <div className="min-w-0 flex-1">
                       <p
-                        className={`text-xs sm:text-sm font-semibold truncate ${
-                          isPlaying ? "text-white font-bold" : "text-zinc-200 group-hover:text-white"
+                        className={`text-xs sm:text-sm font-bold truncate leading-snug ${
+                          isPlaying
+                            ? isLight
+                              ? "text-[#2B4C8F]"
+                              : "text-[#6C95FF]"
+                            : isLight
+                            ? "text-[#1A1F2C] group-hover:text-[#2B4C8F]"
+                            : "text-white group-hover:text-[#6C95FF]"
                         }`}
-                        style={{ color: isPlaying ? config.primaryHex : undefined }}
+                        style={{ fontFamily: "var(--font-quicksand), sans-serif" }}
                       >
                         {track.clean_title || track.filename}
                       </p>
-                      <p className="text-[11px] text-zinc-400 truncate">
+                      <p className="text-[11px] text-[#8E99AE] truncate">
                         {track.artist || "Unknown Artist"}
                         {track.album ? ` • ${track.album}` : ""}
                       </p>
@@ -646,7 +694,7 @@ export function PlaylistsSection({
                     <LikeButton size="sm" track={track} />
 
                     {typeof track.duration === "number" && track.duration > 0 && (
-                      <span className="text-[11px] font-mono text-zinc-400 hidden sm:inline">
+                      <span className="text-[11px] font-mono text-[#8E99AE] hidden sm:inline">
                         {Math.floor(track.duration / 60)}:
                         {Math.floor(track.duration % 60).toString().padStart(2, "0")}
                       </span>
@@ -658,7 +706,7 @@ export function PlaylistsSection({
                           e.stopPropagation();
                           handleRemoveTrack(selectedPlaylist.id, track.filename || track.youtube_id || "");
                         }}
-                        className="p-2 text-zinc-500 hover:text-red-400 rounded-xl hover:bg-red-500/10 transition-colors"
+                        className="p-1.5 text-slate-400 hover:text-red-500 rounded-xl hover:bg-red-500/10 transition-colors"
                         title="Remove from playlist"
                       >
                         ✕
@@ -678,22 +726,36 @@ export function PlaylistsSection({
   return (
     <div id={id} className="space-y-8 animate-in fade-in duration-200">
       {/* Header bar */}
-      <div className="flex items-center justify-between gap-4">
+      <div
+        className={`rounded-[28px] p-5 sm:p-6 border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+          isLight
+            ? "bg-white border-[#E2E8F0] shadow-[0_10px_30px_rgba(35,55,110,0.06)]"
+            : "bg-[#161C2E] border-white/10 shadow-[0_12px_32px_rgba(0,0,0,0.35)]"
+        }`}
+      >
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+          <h2
+            className={`text-2xl font-black tracking-tight ${
+              isLight ? "text-[#1A1F2C]" : "text-white"
+            }`}
+            style={{ fontFamily: "var(--font-quicksand), sans-serif" }}
+          >
             Playlists Hub
           </h2>
-          <p className="text-xs text-zinc-400 mt-1">
+          <p className="text-xs text-[#8E99AE] mt-1 font-medium">
             Browse smart collections, import YouTube sets, and manage your library
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <button
             type="button"
             onClick={() => setShowImportModal(true)}
-            className="text-xs text-zinc-200 hover:text-white px-3 py-2 rounded-xl glass-card hover:border-white/20 transition-all flex items-center gap-1.5 font-semibold"
-            title="Import playlist from CSV file, text list, or YouTube URL"
+            className={`text-xs px-3.5 py-2 rounded-full border transition-all flex items-center gap-1.5 font-bold active:scale-95 ${
+              isLight
+                ? "bg-[#F3F5FA] hover:bg-[#E6ECF8] border-[#E2E8F0] text-slate-700"
+                : "bg-white/10 hover:bg-white/15 border-white/10 text-white"
+            }`}
           >
             <span>📥</span>
             <span>Import</span>
@@ -703,20 +765,30 @@ export function PlaylistsSection({
           <div className="relative group">
             <button
               type="button"
-              className="text-xs text-zinc-400 hover:text-white px-2.5 py-2 rounded-xl glass-card hover:border-white/20 transition-all"
+              className={`text-xs px-3 py-2 rounded-full border transition-all font-bold ${
+                isLight
+                  ? "bg-[#F3F5FA] hover:bg-[#E6ECF8] border-[#E2E8F0] text-slate-700"
+                  : "bg-white/10 hover:bg-white/15 border-white/10 text-white"
+              }`}
               title="Backup & Restore Options"
             >
               •••
             </button>
-            <div className="absolute right-0 top-full mt-1 hidden group-hover:flex flex-col bg-zinc-950 border border-white/10 rounded-xl p-1.5 shadow-xl z-30 min-w-[150px] space-y-1">
+            <div
+              className={`absolute right-0 top-full mt-1.5 hidden group-hover:flex flex-col rounded-2xl p-2 shadow-2xl z-30 min-w-[170px] space-y-1 border ${
+                isLight
+                  ? "bg-white border-[#E2E8F0] shadow-[0_12px_32px_rgba(35,55,110,0.15)]"
+                  : "bg-[#161C2E] border-white/15 shadow-[0_16px_36px_rgba(0,0,0,0.5)]"
+              }`}
+            >
               <button
                 type="button"
                 onClick={handleExportPlaylists}
-                className="w-full text-left px-2.5 py-1.5 text-xs text-zinc-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+                className="w-full text-left px-3 py-2 text-xs font-semibold rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
               >
                 Export JSON Backup
               </button>
-              <label className="w-full text-left px-2.5 py-1.5 text-xs text-zinc-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors cursor-pointer block">
+              <label className="w-full text-left px-3 py-2 text-xs font-semibold rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer block">
                 Restore JSON Backup
                 <input
                   type="file"
@@ -730,7 +802,8 @@ export function PlaylistsSection({
 
           <button
             onClick={() => setShowNewModal(true)}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r ${config.gradient} text-white text-xs font-bold shadow-lg shadow-black/25 active:scale-95 transition-all`}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-white text-xs font-bold shadow-md active:scale-95 transition-all"
+            style={{ backgroundColor: config.primaryHex }}
           >
             <span>+</span>
             <span>New Playlist</span>
@@ -738,22 +811,40 @@ export function PlaylistsSection({
         </div>
       </div>
 
-      {/* ── SMART PLAYLISTS HERO SHELF ─────────────────────────────────────── */}
+      {/* ── SMART PLAYLISTS HERO SHELF (Liked Songs pinned first) ─────────────────── */}
       <div className="space-y-3">
-        <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-400 px-1">
+        <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-[#8E99AE] px-1">
           Smart Collections
         </h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
           {smartPlaylists.map((sp) => {
             const count = sp.tracks.length;
+            const isLikedCard = sp.id === "smart-liked";
+
             return (
               <div
                 key={sp.id}
                 onClick={() => setActivePlaylistId(sp.id)}
-                className="group relative flex flex-col justify-between p-4 rounded-2xl glass-card hover:border-white/30 cursor-pointer transition-all hover:-translate-y-0.5 shadow-lg overflow-hidden"
+                className={`group relative flex flex-col justify-between p-4 rounded-[24px] cursor-pointer transition-all duration-300 hover:-translate-y-1 border ${
+                  isLikedCard
+                    ? isLight
+                      ? "bg-gradient-to-br from-[#FFF0F5] to-white border-[#F472B6]/40 shadow-[0_8px_24px_rgba(244,114,182,0.15)]"
+                      : "bg-gradient-to-br from-[#2D1629] to-[#161C2E] border-[#EC4899]/40 shadow-[0_8px_24px_rgba(236,72,153,0.25)]"
+                    : isLight
+                    ? "bg-white border-[#E2E8F0] shadow-[0_6px_20px_rgba(35,55,110,0.05)] hover:shadow-[0_12px_28px_rgba(35,55,110,0.1)]"
+                    : "bg-[#161C2E] border-white/10 shadow-[0_8px_24px_rgba(0,0,0,0.3)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.45)]"
+                }`}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-xl group-hover:scale-110 transition-transform">
+                  <div
+                    className={`w-11 h-11 rounded-[16px] flex items-center justify-center text-xl shadow-sm transition-transform group-hover:scale-110 ${
+                      isLikedCard
+                        ? "bg-[#EC4899]/15 text-[#EC4899]"
+                        : isLight
+                        ? "bg-[#F3F5FA] text-slate-700"
+                        : "bg-white/10 text-white"
+                    }`}
+                  >
                     {sp.icon}
                   </div>
                   {count > 0 && (
@@ -763,18 +854,31 @@ export function PlaylistsSection({
                         e.stopPropagation();
                         onPlayPlaylist(sp.tracks, 0, sp.name);
                       }}
-                      className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity active:scale-90"
+                      className="w-8 h-8 rounded-full text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-md active:scale-90 pl-0.5"
+                      style={{ backgroundColor: config.primaryHex }}
                       title={`Play ${sp.name}`}
                     >
                       ▶
                     </button>
                   )}
                 </div>
+
                 <div className="pt-4 space-y-0.5">
-                  <h4 className="text-sm font-bold text-white group-hover:text-zinc-100 truncate">
+                  <h4
+                    className={`text-sm font-bold truncate ${
+                      isLikedCard
+                        ? isLight
+                          ? "text-[#BE185D]"
+                          : "text-[#F472B6]"
+                        : isLight
+                        ? "text-[#1A1F2C]"
+                        : "text-white"
+                    }`}
+                    style={{ fontFamily: "var(--font-quicksand), sans-serif" }}
+                  >
                     {sp.name}
                   </h4>
-                  <p className="text-[11px] text-zinc-400">
+                  <p className="text-[11px] text-[#8E99AE] font-medium">
                     {count} {count === 1 ? "track" : "tracks"}
                   </p>
                 </div>
@@ -784,29 +888,35 @@ export function PlaylistsSection({
         </div>
       </div>
 
-      {/* ── RECENTLY PLAYED HORIZONTAL CAROUSEL (Spotify / YT Music Style) ───── */}
+      {/* ── RECENTLY PLAYED HORIZONTAL CAROUSEL ──────────────────────────────── */}
       {recentlyPlayed.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between px-1">
-            <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-400">
+            <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-[#8E99AE]">
               Recently Played
             </h3>
             <button
               onClick={() => setActivePlaylistId("smart-recent")}
-              className="text-xs text-zinc-400 hover:text-white font-semibold transition-colors"
+              className={`text-xs font-bold transition-colors ${
+                isLight ? "text-[#2B4C8F] hover:underline" : "text-[#6C95FF] hover:underline"
+              }`}
             >
               See all ({recentlyPlayed.length}) →
             </button>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-white/10 -mx-1 px-1">
+          <div className="flex gap-3.5 overflow-x-auto pb-2 scrollbar-none -mx-1 px-1">
             {recentlyPlayed.slice(0, 10).map((track, idx) => (
               <div
                 key={`${track.filename || track.youtube_id}-${idx}`}
                 onClick={() => onSelectTrack(track, recentlyPlayed, "Recently Played")}
-                className="group w-32 sm:w-36 shrink-0 flex flex-col p-2.5 rounded-2xl glass-card hover:border-white/25 cursor-pointer transition-all hover:-translate-y-1 shadow-md"
+                className={`group w-36 sm:w-40 shrink-0 flex flex-col p-3 rounded-[22px] cursor-pointer transition-all duration-300 hover:-translate-y-1 border ${
+                  isLight
+                    ? "bg-white border-[#E2E8F0] shadow-[0_6px_20px_rgba(35,55,110,0.05)] hover:shadow-[0_12px_28px_rgba(35,55,110,0.1)]"
+                    : "bg-[#161C2E] border-white/10 shadow-[0_8px_24px_rgba(0,0,0,0.3)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.45)]"
+                }`}
               >
-                <div className="relative w-full aspect-square rounded-xl overflow-hidden bg-zinc-900 border border-white/10 mb-2 shadow-inner">
+                <div className="relative w-full aspect-square rounded-[18px] overflow-hidden bg-slate-900 mb-2 shadow-sm">
                   {track.thumbnail_url ? (
                     <img
                       src={resolveMediaUrl(track.thumbnail_url)}
@@ -815,20 +925,25 @@ export function PlaylistsSection({
                       loading="lazy"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-xl text-zinc-600">
+                    <div className="w-full h-full flex items-center justify-center text-xl text-slate-500">
                       🎵
                     </div>
                   )}
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <span className="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center text-xs pl-0.5 shadow-lg">
+                    <span className="w-8 h-8 rounded-full bg-white text-[#2B4C8F] flex items-center justify-center text-xs pl-0.5 shadow-lg">
                       ▶
                     </span>
                   </div>
                 </div>
-                <p className="text-xs font-bold text-white truncate">
+                <p
+                  className={`text-xs font-bold truncate leading-tight ${
+                    isLight ? "text-slate-800" : "text-white"
+                  }`}
+                  style={{ fontFamily: "var(--font-quicksand), sans-serif" }}
+                >
                   {track.clean_title || track.filename}
                 </p>
-                <p className="text-[10px] text-zinc-400 truncate">
+                <p className="text-[10px] text-[#8E99AE] truncate mt-0.5">
                   {track.artist || "Unknown Artist"}
                 </p>
               </div>
@@ -839,7 +954,7 @@ export function PlaylistsSection({
 
       {/* ── ALL PLAYLISTS & CUSTOM COLLECTIONS ──────────────────────────────── */}
       <div className="space-y-3">
-        <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-400 px-1">
+        <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-[#8E99AE] px-1">
           Playlists & Sets
         </h3>
 
@@ -855,10 +970,14 @@ export function PlaylistsSection({
                 <div
                   key={pl.id}
                   onClick={() => setActivePlaylistId(pl.id)}
-                  className="group relative flex flex-col rounded-3xl overflow-hidden glass-card p-3 sm:p-3.5 hover:border-white/25 cursor-pointer transition-all hover:-translate-y-1 shadow-xl"
+                  className={`group relative flex flex-col rounded-[26px] overflow-hidden p-3.5 cursor-pointer transition-all duration-300 hover:-translate-y-1 border ${
+                    isLight
+                      ? "bg-white border-[#E2E8F0] shadow-[0_6px_20px_rgba(35,55,110,0.05)] hover:shadow-[0_12px_28px_rgba(35,55,110,0.1)]"
+                      : "bg-[#161C2E] border-white/10 shadow-[0_8px_24px_rgba(0,0,0,0.3)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.45)]"
+                  }`}
                 >
-                  {/* Dynamic Cover Artwork */}
-                  <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-zinc-950 border border-white/10 shadow-md">
+                  {/* Dynamic Squircle Cover Artwork */}
+                  <div className="relative w-full aspect-square rounded-[20px] overflow-hidden bg-slate-900 shadow-sm">
                     {topThumbnail ? (
                       <img
                         src={resolveMediaUrl(topThumbnail)}
@@ -867,13 +986,10 @@ export function PlaylistsSection({
                         loading="lazy"
                       />
                     ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 via-zinc-950 to-black text-4xl text-zinc-600">
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-800 to-slate-950 text-4xl text-slate-400">
                         <span>{pl.icon}</span>
                       </div>
                     )}
-
-                    {/* Subtle vignette */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-60 group-hover:opacity-40 transition-opacity" />
 
                     {/* Quick Play Hover Button */}
                     {pl.tracks.length > 0 && (
@@ -882,10 +998,11 @@ export function PlaylistsSection({
                           e.stopPropagation();
                           onPlayPlaylist(pl.tracks, 0, pl.name);
                         }}
-                        className={`absolute bottom-2.5 right-2.5 w-10 h-10 rounded-full bg-gradient-to-r ${config.gradient} text-white flex items-center justify-center shadow-lg opacity-90 sm:opacity-0 sm:group-hover:opacity-100 sm:translate-y-2 sm:group-hover:translate-y-0 transition-all active:scale-90`}
+                        className="absolute bottom-2.5 right-2.5 w-10 h-10 rounded-full text-white flex items-center justify-center shadow-lg opacity-90 sm:opacity-0 sm:group-hover:opacity-100 sm:translate-y-2 sm:group-hover:translate-y-0 transition-all active:scale-90 pl-0.5"
+                        style={{ backgroundColor: config.primaryHex }}
                         title="Play Playlist"
                       >
-                        <svg className="w-4 h-4 ml-0.5 fill-current" viewBox="0 0 24 24">
+                        <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
                           <path d="M8 5v14l11-7z" />
                         </svg>
                       </button>
@@ -893,11 +1010,11 @@ export function PlaylistsSection({
 
                     {/* Badges */}
                     {isYt ? (
-                      <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-red-600/80 backdrop-blur-md text-white text-[9px] font-bold border border-red-500/30 flex items-center gap-1">
+                      <span className="absolute top-2 left-2 px-2.5 py-0.5 rounded-full bg-red-600/90 backdrop-blur-md text-white text-[9px] font-bold shadow-sm flex items-center gap-1">
                         <span>▶</span> YouTube
                       </span>
                     ) : pl.isSystem ? (
-                      <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-zinc-300 text-[9px] font-bold border border-white/10">
+                      <span className="absolute top-2 left-2 px-2.5 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-white text-[9px] font-bold">
                         System
                       </span>
                     ) : null}
@@ -905,10 +1022,15 @@ export function PlaylistsSection({
 
                   {/* Playlist Title & Stats */}
                   <div className="pt-3 px-1 space-y-0.5">
-                    <h3 className="text-xs sm:text-sm font-bold text-white group-hover:text-zinc-100 truncate">
+                    <h3
+                      className={`text-xs sm:text-sm font-bold truncate leading-tight ${
+                        isLight ? "text-slate-800" : "text-white"
+                      }`}
+                      style={{ fontFamily: "var(--font-quicksand), sans-serif" }}
+                    >
                       {pl.name}
                     </h3>
-                    <p className="text-[11px] text-zinc-400">
+                    <p className="text-[11px] text-[#8E99AE] font-medium">
                       {pl.tracks.length} {pl.tracks.length === 1 ? "track" : "tracks"}
                     </p>
                   </div>
@@ -923,28 +1045,39 @@ export function PlaylistsSection({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
           <form
             onSubmit={handleCreatePlaylist}
-            className="w-full max-w-sm rounded-3xl bg-zinc-950 border border-white/15 p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200"
+            className={`w-full max-w-sm rounded-[28px] border p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200 ${
+              isLight ? "bg-white border-[#E2E8F0]" : "bg-[#161C2E] border-white/15"
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-white">Create New Playlist</h3>
+              <h3
+                className={`text-base font-bold ${isLight ? "text-slate-800" : "text-white"}`}
+                style={{ fontFamily: "var(--font-quicksand), sans-serif" }}
+              >
+                Create New Playlist
+              </h3>
               <button
                 type="button"
                 onClick={() => setShowNewModal(false)}
-                className="text-zinc-400 hover:text-white text-sm"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white text-sm"
               >
                 ✕
               </button>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs text-zinc-400">Playlist Name</label>
+              <label className="text-xs font-semibold text-[#8E99AE]">Playlist Name</label>
               <input
                 type="text"
                 value={newPlaylistName}
                 onChange={(e) => setNewPlaylistName(e.target.value)}
-                placeholder="e.g. Synthwave Dreams, Driving Mix..."
-                className="w-full px-4 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-white text-xs focus:outline-none focus:border-white/30"
+                placeholder="e.g. Chill Beats, Workout Mix..."
+                className={`w-full px-4 py-2.5 rounded-full border text-xs outline-none transition-all ${
+                  isLight
+                    ? "bg-[#F3F5FA] border-[#E2E8F0] text-slate-800 focus:border-[#2B4C8F]"
+                    : "bg-white/5 border-white/10 text-white focus:border-[#6C95FF]"
+                }`}
                 autoFocus
               />
             </div>
@@ -953,14 +1086,15 @@ export function PlaylistsSection({
               <button
                 type="button"
                 onClick={() => setShowNewModal(false)}
-                className="px-4 py-2 text-xs font-semibold text-zinc-400 hover:text-white rounded-xl hover:bg-white/10"
+                className="px-4 py-2 text-xs font-bold text-[#8E99AE] hover:text-slate-800 dark:hover:text-white rounded-full"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={!newPlaylistName.trim()}
-                className={`px-5 py-2 text-xs font-bold text-white rounded-xl bg-gradient-to-r ${config.gradient} shadow-lg disabled:opacity-40 disabled:pointer-events-none active:scale-95`}
+                className="px-5 py-2 text-xs font-bold text-white rounded-full shadow-md disabled:opacity-40 disabled:pointer-events-none active:scale-95 transition-all"
+                style={{ backgroundColor: config.primaryHex }}
               >
                 Create
               </button>
