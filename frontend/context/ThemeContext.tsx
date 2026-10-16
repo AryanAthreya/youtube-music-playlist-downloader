@@ -2,7 +2,16 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 
-export type ThemeColor = "lime" | "cream" | "purple" | "red" | "cyan" | "emerald" | "amber";
+export type ThemeColor =
+  | "soft-light"
+  | "soft-dark"
+  | "lime"
+  | "cream"
+  | "purple"
+  | "red"
+  | "cyan"
+  | "emerald"
+  | "amber";
 
 export interface ThemeConfig {
   id: ThemeColor;
@@ -26,6 +35,46 @@ export interface ThemeConfig {
 }
 
 export const THEMES: Record<ThemeColor, ThemeConfig> = {
+  "soft-light": {
+    id: "soft-light",
+    name: "Soft Light",
+    description: "Soft Neumorphic Light & Deep Navy Accent",
+    isLight: true,
+    primaryHex: "#2B4C8F",
+    secondaryHex: "#1E3A70",
+    gradient: "from-[#2B4C8F] to-[#1E3A70]",
+    glow: "rgba(43, 76, 143, 0.20)",
+    borderActive: "border-[#2B4C8F]",
+    badge: "bg-[#E6ECF8] text-[#2B4C8F] border-[#2B4C8F]/20 font-semibold",
+    textAccent: "text-[#2B4C8F]",
+    pageBg: "bg-[#F3F5FA]",
+    pageBgStyle: "#F3F5FA",
+    textColor: "text-[#1A1F2C]",
+    subtextColor: "text-[#9AA3B5]",
+    cardBg: "bg-white border-[#E2E8F0] shadow-soft text-[#1A1F2C]",
+    navBg: "bg-white/95 border-[#E2E8F0] text-[#1A1F2C]",
+    dotColor: "#2B4C8F",
+  },
+  "soft-dark": {
+    id: "soft-dark",
+    name: "Soft Dark",
+    description: "Calm Obsidian Dark & Soft Blue Accent",
+    isLight: false,
+    primaryHex: "#6C95FF",
+    secondaryHex: "#4C75E6",
+    gradient: "from-[#6C95FF] to-[#4C75E6]",
+    glow: "rgba(108, 149, 255, 0.25)",
+    borderActive: "border-[#6C95FF]/60",
+    badge: "bg-[#202D4E] text-[#6C95FF] border-[#6C95FF]/30 font-semibold",
+    textAccent: "text-[#6C95FF]",
+    pageBg: "bg-[#0D1220]",
+    pageBgStyle: "#0D1220",
+    textColor: "text-[#EAF0FF]",
+    subtextColor: "text-[#7F8AA6]",
+    cardBg: "bg-[#161C2E] border-white/10 shadow-soft text-[#EAF0FF]",
+    navBg: "bg-[#161C2E]/95 border-white/10 text-[#EAF0FF]",
+    dotColor: "#6C95FF",
+  },
   lime: {
     id: "lime",
     name: "Lemon Green",
@@ -172,59 +221,122 @@ interface ThemeContextType {
   theme: ThemeColor;
   config: ThemeConfig;
   setTheme: (theme: ThemeColor) => void;
+  isFollowSystem: boolean;
+  setIsFollowSystem: (follow: boolean) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType>({
-  theme: "lime",
-  config: THEMES.lime,
+  theme: "soft-light",
+  config: THEMES["soft-light"],
   setTheme: () => {},
+  isFollowSystem: false,
+  setIsFollowSystem: () => {},
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<ThemeColor>("lime");
+  const [theme, setThemeState] = useState<ThemeColor>("soft-light");
+  const [isFollowSystem, setIsFollowSystemState] = useState<boolean>(false);
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("ytdl_theme_preset") as ThemeColor;
-      if (saved && THEMES[saved]) {
-        setThemeState(saved);
+      const followSys = localStorage.getItem("ytdl_theme_system") === "true";
+      setIsFollowSystemState(followSys);
+
+      if (followSys) {
+        const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        setThemeState(prefersDark ? "soft-dark" : "soft-light");
+      } else {
+        const saved = localStorage.getItem("ytdl_theme_preset") as ThemeColor;
+        if (saved && THEMES[saved]) {
+          setThemeState(saved);
+        } else {
+          // Default for new users
+          setThemeState("soft-light");
+        }
       }
     } catch {}
   }, []);
 
+  // Listen for system color scheme changes if follow-system is enabled
   useEffect(() => {
-    const config = THEMES[theme];
-    if (!config) return;
+    if (!isFollowSystem) return;
+
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = (e: MediaQueryListEvent) => {
+      setThemeState(e.matches ? "soft-dark" : "soft-light");
+    };
+
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [isFollowSystem]);
+
+  useEffect(() => {
+    const config = THEMES[theme] || THEMES["soft-light"];
     const root = document.documentElement;
+
     root.style.setProperty("--theme-primary", config.primaryHex);
     root.style.setProperty("--theme-glow", config.glow);
+    root.style.setProperty("--accent", config.primaryHex);
+    root.style.setProperty("--accent-glow", config.glow);
 
-    if (config.isLight) {
+    // Apply tokens matching current theme
+    if (theme === "soft-light") {
+      root.classList.add("theme-soft-light", "theme-light");
+      root.classList.remove("theme-soft-dark", "theme-dark");
+      root.style.setProperty("--background", "#F3F5FA");
+      root.style.setProperty("--foreground", "#1A1F2C");
+    } else if (theme === "soft-dark") {
+      root.classList.add("theme-soft-dark", "theme-dark");
+      root.classList.remove("theme-soft-light", "theme-light");
+      root.style.setProperty("--background", "#0D1220");
+      root.style.setProperty("--foreground", "#EAF0FF");
+    } else if (config.isLight) {
       root.style.setProperty("--background", "#f7f1e5");
       root.style.setProperty("--foreground", "#1c1917");
       root.style.setProperty("--card-bg", "rgba(255, 255, 255, 0.9)");
       root.style.setProperty("--card-border", "rgba(180, 83, 9, 0.15)");
       root.classList.add("theme-light");
-      root.classList.remove("theme-dark");
+      root.classList.remove("theme-dark", "theme-soft-light", "theme-soft-dark");
     } else {
       root.style.setProperty("--background", config.pageBg);
       root.style.setProperty("--foreground", "#f8fafc");
       root.style.setProperty("--card-bg", "rgba(15, 23, 42, 0.65)");
       root.style.setProperty("--card-border", "rgba(255, 255, 255, 0.08)");
       root.classList.add("theme-dark");
-      root.classList.remove("theme-light");
+      root.classList.remove("theme-light", "theme-soft-light", "theme-soft-dark");
     }
   }, [theme]);
 
   const setTheme = (newTheme: ThemeColor) => {
     setThemeState(newTheme);
+    setIsFollowSystemState(false);
     try {
       localStorage.setItem("ytdl_theme_preset", newTheme);
+      localStorage.setItem("ytdl_theme_system", "false");
+    } catch {}
+  };
+
+  const setIsFollowSystem = (follow: boolean) => {
+    setIsFollowSystemState(follow);
+    try {
+      localStorage.setItem("ytdl_theme_system", follow ? "true" : "false");
+      if (follow) {
+        const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        setThemeState(prefersDark ? "soft-dark" : "soft-light");
+      }
     } catch {}
   };
 
   return (
-    <ThemeContext.Provider value={{ theme, config: THEMES[theme], setTheme }}>
+    <ThemeContext.Provider
+      value={{
+        theme,
+        config: THEMES[theme] || THEMES["soft-light"],
+        setTheme,
+        isFollowSystem,
+        setIsFollowSystem,
+      }}
+    >
       {children}
     </ThemeContext.Provider>
   );

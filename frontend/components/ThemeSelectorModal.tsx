@@ -19,7 +19,7 @@ interface ThemeSelectorModalProps {
 }
 
 export function ThemeSelectorModal({ isOpen, onClose }: ThemeSelectorModalProps) {
-  const { theme, setTheme, config } = useTheme();
+  const { theme, setTheme, config, isFollowSystem, setIsFollowSystem } = useTheme();
   const [offlineUsage, setOfflineUsage] = useState<{ count: number; totalBytes: number }>({ count: 0, totalBytes: 0 });
   const [quota, setQuota] = useState<{ percentUsed: number; quotaBytes: number; usageBytes: number }>({ percentUsed: 0, quotaBytes: 0, usageBytes: 0 });
   const [quality, setQuality] = useState<StreamingQualitySetting>("auto");
@@ -89,7 +89,20 @@ export function ThemeSelectorModal({ isOpen, onClose }: ThemeSelectorModalProps)
 
         {/* Section 1: Themes */}
         <div className="space-y-2">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Appearance Preset</span>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Appearance Preset</span>
+            <button
+              type="button"
+              onClick={() => setIsFollowSystem(!isFollowSystem)}
+              className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-all ${
+                isFollowSystem
+                  ? "bg-blue-500/20 text-blue-300 border-blue-500/40"
+                  : "bg-white/5 text-zinc-400 border-white/10 hover:text-white"
+              }`}
+            >
+              {isFollowSystem ? "✓ System Sync On" : "Sync with System"}
+            </button>
+          </div>
           <div className="space-y-2 max-h-[38vh] overflow-y-auto pr-1">
             {themeList.map((t) => {
               const isSelected = theme === t.id;
