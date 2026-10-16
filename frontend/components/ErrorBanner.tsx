@@ -1,5 +1,7 @@
 "use client";
 
+import { useTheme } from "../context/ThemeContext";
+
 interface ErrorBannerProps {
   id: string;
   message: string;
@@ -23,46 +25,36 @@ const ERROR_ICONS: Record<string, string> = {
   API_ERROR: "❌",
 };
 
-const ERROR_COLORS: Record<string, string> = {
-  INVALID_URL: "border-orange-500/40 bg-orange-500/10",
-  UNSUPPORTED_URL: "border-orange-500/40 bg-orange-500/10",
-  VIDEO_UNAVAILABLE: "border-red-500/40 bg-red-500/10",
-  REGION_RESTRICTED: "border-yellow-500/40 bg-yellow-500/10",
-  FORMAT_UNAVAILABLE: "border-yellow-500/40 bg-yellow-500/10",
-  EXTRACTION_ERROR: "border-red-500/40 bg-red-500/10",
-  MERGE_ERROR: "border-red-500/40 bg-red-500/10",
-  DISK_SPACE_ERROR: "border-purple-500/40 bg-purple-500/10",
-  NETWORK_ERROR: "border-blue-500/40 bg-blue-500/10",
-  DUPLICATE_JOB: "border-blue-500/40 bg-blue-500/10",
-};
-
 export function ErrorBanner({ id, message, code, onDismiss }: ErrorBannerProps) {
+  const { config, theme } = useTheme();
+  const isLight = config.isLight || theme === "soft-light";
   const icon = ERROR_ICONS[code] ?? "❌";
-  const colorClass = ERROR_COLORS[code] ?? "border-red-500/40 bg-red-500/10";
 
   return (
     <div
       id={id}
       role="alert"
       aria-live="assertive"
-      className={`flex items-start gap-3 rounded-2xl border p-4 mb-4 ${colorClass}`}
+      className={`flex items-start gap-3.5 rounded-[22px] border p-4 mb-4 transition-all duration-200 animate-in fade-in slide-in-from-top-2 ${
+        isLight
+          ? "bg-red-500/10 border-red-500/20 text-red-950 shadow-sm"
+          : "bg-red-950/40 border-red-500/30 text-red-200 shadow-md"
+      }`}
     >
-      <span className="text-2xl shrink-0 mt-0.5" aria-hidden>
+      <span className="text-xl shrink-0 mt-0.5" aria-hidden>
         {icon}
       </span>
       <div className="flex-1 min-w-0">
-        <p className="text-white font-medium leading-snug">{message}</p>
-        <p className="text-gray-400 text-xs mt-0.5 font-mono">{code}</p>
+        <p className="font-bold text-xs sm:text-sm leading-snug">{message}</p>
+        <p className="text-[10px] opacity-70 mt-0.5 font-mono">{code}</p>
       </div>
       <button
         id={`${id}-dismiss`}
         onClick={onDismiss}
         aria-label="Dismiss error"
-        className="shrink-0 text-gray-500 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10"
+        className="p-1 rounded-lg opacity-60 hover:opacity-100 transition-opacity"
       >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
+        ✕
       </button>
     </div>
   );

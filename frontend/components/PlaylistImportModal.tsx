@@ -43,7 +43,8 @@ export function PlaylistImportModal({
   onImportComplete,
   onPreviewTrack,
 }: PlaylistImportModalProps) {
-  const { config } = useTheme();
+  const { config, theme } = useTheme();
+  const isLight = config.isLight || theme === "soft-light";
 
   // Tab & Step state
   const [activeTab, setActiveTab] = useState<ImportTab>("csv");
@@ -340,22 +341,29 @@ export function PlaylistImportModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div
-        className="w-full max-w-2xl max-h-[90vh] bg-zinc-950 border border-white/15 rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+        className={`w-full max-w-2xl max-h-[90vh] rounded-[30px] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border ${
+          isLight
+            ? "bg-white border-[#E2E8F0] shadow-[0_20px_50px_rgba(35,55,110,0.15)] text-slate-800"
+            : "bg-[#161C2E] border-white/15 shadow-[0_25px_60px_rgba(0,0,0,0.6)] text-white"
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-white/10 shrink-0">
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-black/5 dark:border-white/10 shrink-0">
           <div className="flex items-center gap-2.5">
             <div
-              className="w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold"
-              style={{ backgroundColor: `${config.primaryHex}25`, color: config.primaryHex }}
+              className="w-9 h-9 rounded-2xl flex items-center justify-center text-sm font-bold shadow-sm"
+              style={{ backgroundColor: `${config.primaryHex}20`, color: config.primaryHex }}
             >
               📥
             </div>
             <div>
-              <h2 className="text-sm sm:text-base font-bold text-white">
+              <h2
+                className={`text-sm sm:text-base font-black ${isLight ? "text-[#1A1F2C]" : "text-white"}`}
+                style={{ fontFamily: "var(--font-quicksand), sans-serif" }}
+              >
                 {currentStep === "input" && "Import Playlist"}
                 {currentStep === "matching" && "Matching Tracks with YouTube..."}
                 {currentStep === "review" && "Review Matched Tracks"}

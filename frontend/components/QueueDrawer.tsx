@@ -31,7 +31,8 @@ export function QueueDrawer({
   onMoveIndex,
   onClearQueue,
 }: QueueDrawerProps) {
-  const { config } = useTheme();
+  const { config, theme } = useTheme();
+  const isLight = config.isLight || theme === "soft-light";
 
   if (!isOpen) return null;
 
@@ -40,29 +41,38 @@ export function QueueDrawer({
     .filter((item) => item.originalIndex > currentIndex);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
       {/* Backdrop tap to close */}
       <div className="flex-1" onClick={onClose} />
 
-      {/* Drawer Panel */}
+      {/* Drawer Panel: Slide up on mobile, slide in on desktop */}
       <div
-        className="w-full max-w-md h-full bg-zinc-950/95 border-l border-white/10 shadow-2xl flex flex-col p-4 sm:p-6 overflow-hidden animate-in slide-in-from-right duration-300"
-        style={{
-          boxShadow: `-10px 0 40px -10px ${config.glow}`,
-        }}
+        className={`w-full max-w-md h-full flex flex-col p-5 sm:p-6 overflow-hidden animate-in slide-in-from-right duration-300 border-l ${
+          isLight
+            ? "bg-[#F3F5FA] border-[#E2E8F0] text-slate-800 shadow-[0_0_50px_rgba(35,55,110,0.15)]"
+            : "bg-[#0D1220] border-white/10 text-white shadow-[0_0_50px_rgba(0,0,0,0.7)]"
+        }`}
       >
+        {/* Mobile Drag Handle */}
+        <div className="w-12 h-1 rounded-full bg-slate-300 dark:bg-slate-700 mx-auto mb-3 md:hidden" />
+
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-white/10 shrink-0">
-          <div className="flex items-center gap-2.5">
+        <div className="flex items-center justify-between pb-4 border-b border-black/5 dark:border-white/10 shrink-0">
+          <div className="flex items-center gap-3">
             <div
-              className="w-8 h-8 rounded-xl flex items-center justify-center text-sm"
-              style={{ backgroundColor: `${config.primaryHex}25`, color: config.primaryHex }}
+              className="w-9 h-9 rounded-[14px] flex items-center justify-center text-sm shadow-sm"
+              style={{ backgroundColor: `${config.primaryHex}20`, color: config.primaryHex }}
             >
               📜
             </div>
             <div>
-              <h3 className="text-base font-bold text-white">Queue</h3>
-              <p className="text-xs text-zinc-400">
+              <h3
+                className={`text-lg font-black tracking-tight ${isLight ? "text-[#1A1F2C]" : "text-white"}`}
+                style={{ fontFamily: "var(--font-quicksand), sans-serif" }}
+              >
+                Queue
+              </h3>
+              <p className="text-xs text-[#8E99AE] font-medium">
                 {queueTracks.length} {queueTracks.length === 1 ? "track" : "tracks"} total
               </p>
             </div>
@@ -73,7 +83,7 @@ export function QueueDrawer({
               <button
                 type="button"
                 onClick={onClearQueue}
-                className="px-2.5 py-1 text-xs rounded-lg text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                className="px-3 py-1.5 text-xs font-bold rounded-full text-red-500 hover:bg-red-500/10 transition-colors"
                 title="Clear upcoming tracks"
               >
                 Clear
@@ -82,7 +92,11 @@ export function QueueDrawer({
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
+              className={`p-2 rounded-full border transition-all ${
+                isLight
+                  ? "bg-white border-[#E2E8F0] text-slate-500 hover:text-slate-800 shadow-sm"
+                  : "bg-white/5 border-white/10 text-slate-400 hover:text-white"
+              }`}
               title="Close Queue"
             >
               ✕
@@ -91,22 +105,22 @@ export function QueueDrawer({
         </div>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto space-y-5 py-4 pr-1">
+        <div className="flex-1 overflow-y-auto space-y-5 py-4 pr-1 scrollbar-none">
           {/* NOW PLAYING SECTION */}
           {currentTrack && (
             <div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2 block">
+              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8E99AE] mb-2.5 block">
                 Now Playing
               </span>
               <div
-                className="p-3 rounded-2xl border flex items-center justify-between gap-3 shadow-lg"
-                style={{
-                  borderColor: `${config.primaryHex}50`,
-                  backgroundColor: `${config.primaryHex}15`,
-                }}
+                className={`p-3.5 rounded-[22px] border flex items-center justify-between gap-3 transition-all ${
+                  isLight
+                    ? "bg-white border-[#E2E8F0] shadow-[0_6px_20px_rgba(35,55,110,0.06)] ring-1 ring-[#2B4C8F]/15"
+                    : "bg-[#161C2E] border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.3)] ring-1 ring-[#6C95FF]/20"
+                }`}
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-zinc-900 shrink-0 border border-white/10">
+                  <div className="relative w-12 h-12 rounded-[16px] overflow-hidden bg-slate-900 shrink-0 border border-black/5 dark:border-white/10 shadow-sm">
                     {currentTrack.thumbnail_url ? (
                       <img
                         src={resolveMediaUrl(currentTrack.thumbnail_url)}
@@ -120,10 +134,15 @@ export function QueueDrawer({
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h4 className="text-sm font-semibold text-white truncate">
+                    <h4
+                      className={`text-xs sm:text-sm font-bold truncate leading-tight ${
+                        isLight ? "text-[#1A1F2C]" : "text-white"
+                      }`}
+                      style={{ fontFamily: "var(--font-quicksand), sans-serif" }}
+                    >
                       {currentTrack.clean_title}
                     </h4>
-                    <p className="text-xs text-zinc-400 truncate">
+                    <p className="text-[11px] text-[#8E99AE] truncate mt-0.5">
                       {currentTrack.artist || "YouTube Music"}
                     </p>
                   </div>
@@ -133,13 +152,13 @@ export function QueueDrawer({
                   <LikeButton size="sm" track={currentTrack} />
                   {isPlaying ? (
                     <span
-                      className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
-                      style={{ backgroundColor: `${config.primaryHex}30`, color: config.primaryHex }}
+                      className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                      style={{ backgroundColor: `${config.primaryHex}20`, color: config.primaryHex }}
                     >
                       Playing
                     </span>
                   ) : (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider text-zinc-400 bg-white/5">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider text-[#8E99AE] bg-black/5 dark:bg-white/5">
                       Paused
                     </span>
                   )}
@@ -150,16 +169,20 @@ export function QueueDrawer({
 
           {/* UP NEXT SECTION */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+            <div className="flex items-center justify-between mb-2.5">
+              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8E99AE]">
                 Up Next ({upNextTracks.length})
               </span>
             </div>
 
             {upNextTracks.length === 0 ? (
-              <div className="py-8 text-center border border-dashed border-white/10 rounded-2xl p-4">
-                <p className="text-sm text-zinc-400">Queue is empty</p>
-                <p className="text-xs text-zinc-500 mt-1">
+              <div
+                className={`py-8 text-center rounded-[22px] border border-dashed p-4 ${
+                  isLight ? "border-slate-300 text-slate-500" : "border-white/10 text-slate-400"
+                }`}
+              >
+                <p className="text-sm font-bold">Queue is empty</p>
+                <p className="text-xs text-[#8E99AE] mt-1">
                   Add tracks from search or playlists to play next
                 </p>
               </div>
@@ -171,13 +194,17 @@ export function QueueDrawer({
                     <div
                       key={`${track.filename}_${originalIndex}`}
                       onClick={() => onSelectIndex(originalIndex)}
-                      className="p-2.5 rounded-xl border border-white/5 hover:border-white/20 bg-zinc-900/60 hover:bg-zinc-900 transition-all flex items-center justify-between gap-3 group cursor-pointer"
+                      className={`p-2.5 sm:p-3 rounded-[18px] border transition-all flex items-center justify-between gap-3 group cursor-pointer ${
+                        isLight
+                          ? "bg-white border-[#E2E8F0] hover:border-[#2B4C8F]/30 hover:shadow-sm"
+                          : "bg-[#161C2E] border-white/10 hover:border-white/20"
+                      }`}
                     >
                       <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <span className="text-xs font-mono text-zinc-500 w-4 text-center shrink-0">
+                        <span className="text-xs font-mono font-bold text-[#8E99AE] w-4 text-center shrink-0">
                           {relIndex + 1}
                         </span>
-                        <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-zinc-950 shrink-0 border border-white/10">
+                        <div className="relative w-10 h-10 rounded-[14px] overflow-hidden bg-slate-900 shrink-0 border border-black/5 dark:border-white/10 shadow-sm">
                           {track.thumbnail_url ? (
                             <img
                               src={resolveMediaUrl(track.thumbnail_url)}
@@ -191,11 +218,16 @@ export function QueueDrawer({
                           )}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <h4 className="text-xs font-medium text-white truncate group-hover:text-zinc-200">
+                          <h4
+                            className={`text-xs font-bold truncate leading-tight ${
+                              isLight ? "text-slate-800 group-hover:text-[#2B4C8F]" : "text-white group-hover:text-[#6C95FF]"
+                            }`}
+                            style={{ fontFamily: "var(--font-quicksand), sans-serif" }}
+                          >
                             {track.clean_title}
                           </h4>
                           {track.artist && (
-                            <p className="text-[10px] text-zinc-400 truncate">{track.artist}</p>
+                            <p className="text-[10px] text-[#8E99AE] truncate mt-0.5">{track.artist}</p>
                           )}
                         </div>
                       </div>
@@ -210,7 +242,7 @@ export function QueueDrawer({
                           <button
                             type="button"
                             onClick={() => onMoveIndex(originalIndex, originalIndex - 1)}
-                            className="w-6 h-6 rounded flex items-center justify-center text-zinc-500 hover:text-white hover:bg-white/10"
+                            className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
                             title="Move up"
                           >
                             ▲
@@ -220,7 +252,7 @@ export function QueueDrawer({
                           <button
                             type="button"
                             onClick={() => onMoveIndex(originalIndex, originalIndex + 1)}
-                            className="w-6 h-6 rounded flex items-center justify-center text-zinc-500 hover:text-white hover:bg-white/10"
+                            className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
                             title="Move down"
                           >
                             ▼
@@ -229,7 +261,7 @@ export function QueueDrawer({
                         <button
                           type="button"
                           onClick={() => onRemoveIndex(originalIndex)}
-                          className="w-6 h-6 rounded flex items-center justify-center text-zinc-500 hover:text-red-400 hover:bg-red-500/10 ml-1"
+                          className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-colors ml-0.5"
                           title="Remove from queue"
                         >
                           ✕

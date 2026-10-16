@@ -2,6 +2,7 @@
 
 import type { FormatInfo, AudioOption, DownloadMode } from "@/lib/types";
 import { formatFileSize } from "@/lib/websocket";
+import { useTheme } from "../context/ThemeContext";
 
 interface QualitySelectorProps {
   id: string;
@@ -50,28 +51,33 @@ export function QualitySelector({
   onVideoSelect,
   onAudioSelect,
 }: QualitySelectorProps) {
+  const { config, theme } = useTheme();
+  const isLight = config.isLight || theme === "soft-light";
+
   if (mode === "video") {
     if (formats.length === 0) {
       return (
-        <p className="text-sm text-gray-500">No video formats available.</p>
+        <p className="text-xs text-[#8E99AE]">No video formats available.</p>
       );
     }
 
     return (
-      <div className="space-y-2">
-        <label htmlFor={`${id}-video-select`} className="block text-sm font-medium text-gray-300">
-          Quality
+      <div className="space-y-1.5">
+        <label htmlFor={`${id}-video-select`} className="block text-xs font-bold text-[#8E99AE]">
+          Video Quality
         </label>
         <select
           id={`${id}-video-select`}
           value={selectedVideoId}
           onChange={(e) => onVideoSelect(e.target.value)}
-          className="w-full bg-gray-900 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm
-            focus:outline-none focus:border-red-500/60 focus:ring-2 focus:ring-red-500/10
-            transition-colors cursor-pointer"
+          className={`w-full rounded-2xl px-4 py-2.5 text-xs font-semibold outline-none transition-all cursor-pointer border ${
+            isLight
+              ? "bg-[#F3F5FA] border-[#E2E8F0] text-slate-800 focus:border-[#2B4C8F]"
+              : "bg-white/5 border-white/10 text-white focus:border-[#6C95FF]"
+          }`}
         >
           {formats.map((fmt) => (
-            <option key={fmt.format_id} value={fmt.format_id}>
+            <option key={fmt.format_id} value={fmt.format_id} className="bg-slate-900 text-white">
               {formatVideoLabel(fmt)}
             </option>
           ))}
@@ -83,32 +89,31 @@ export function QualitySelector({
   // Audio mode
   if (audioOptions.length === 0) {
     return (
-      <p className="text-sm text-gray-500">No audio formats available.</p>
+      <p className="text-xs text-[#8E99AE]">No audio formats available.</p>
     );
   }
 
   return (
-    <div className="space-y-2">
-      <label htmlFor={`${id}-audio-select`} className="block text-sm font-medium text-gray-300">
-        Audio Format
+    <div className="space-y-1.5">
+      <label htmlFor={`${id}-audio-select`} className="block text-xs font-bold text-[#8E99AE]">
+        Audio Quality
       </label>
       <select
         id={`${id}-audio-select`}
         value={selectedAudioId}
         onChange={(e) => onAudioSelect(e.target.value)}
-        className="w-full bg-gray-900 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm
-          focus:outline-none focus:border-orange-500/60 focus:ring-2 focus:ring-orange-500/10
-          transition-colors cursor-pointer"
+        className={`w-full rounded-2xl px-4 py-2.5 text-xs font-semibold outline-none transition-all cursor-pointer border ${
+          isLight
+            ? "bg-[#F3F5FA] border-[#E2E8F0] text-slate-800 focus:border-[#2B4C8F]"
+            : "bg-white/5 border-white/10 text-white focus:border-[#6C95FF]"
+        }`}
       >
         {audioOptions.map((opt) => (
-          <option key={opt.format_id} value={opt.format_id}>
+          <option key={opt.format_id} value={opt.format_id} className="bg-slate-900 text-white">
             {formatAudioLabel(opt)}
           </option>
         ))}
       </select>
-      <p className="text-xs text-gray-500">
-        Audio will be extracted/converted via FFmpeg.
-      </p>
     </div>
   );
 }

@@ -9,7 +9,7 @@ import type {
   FormatInfo,
   AudioOption,
 } from "@/lib/types";
-import { formatFileSize } from "@/lib/websocket";
+import { useTheme } from "../context/ThemeContext";
 
 interface PlaylistVideoListProps {
   id: string;
@@ -39,9 +39,10 @@ export function PlaylistVideoList({
   onPlayPlaylist,
   onPlayTrack,
 }: PlaylistVideoListProps) {
+  const { config, theme } = useTheme();
+  const isLight = config.isLight || theme === "soft-light";
+
   const [mode, setMode] = useState<DownloadMode>("video");
-  // Placeholder quality state — in a real flow these come from a per-video info fetch
-  // For playlists, the quality is applied uniformly to all selected videos
   const [qualityId, setQualityId] = useState<string>("1080");
   const [audioQualityId, setAudioQualityId] = useState<string>("bestaudio");
 
@@ -70,7 +71,6 @@ export function PlaylistVideoList({
     onDownload({ url: `https://www.youtube.com/playlist?list=${info.playlist_id}`, mode, quality_id: q });
   };
 
-  // Synthetic format options for playlist quality selection
   const playlistVideoFormats: FormatInfo[] = [
     { format_id: "2160", ext: "mp4", resolution: "3840x2160", height: 2160, width: 3840, fps: null, vcodec: "avc1", acodec: null, tbr: null, filesize: null, filesize_approx: null, note: "4K" },
     { format_id: "1440", ext: "mp4", resolution: "2560x1440", height: 1440, width: 2560, fps: null, vcodec: "avc1", acodec: null, tbr: null, filesize: null, filesize_approx: null, note: "1440p" },
@@ -87,30 +87,46 @@ export function PlaylistVideoList({
   ];
 
   return (
-    <div id={id} className="space-y-4">
+    <div id={id} className="space-y-4 animate-in fade-in duration-300">
       {/* Back button */}
       <button
         onClick={onReset}
-        className="flex items-center gap-1.5 text-gray-500 hover:text-gray-300 text-sm transition-colors"
+        className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold border transition-all active:scale-95 ${
+          isLight
+            ? "bg-white border-[#E2E8F0] text-slate-600 hover:text-slate-900 shadow-sm"
+            : "bg-white/5 border-white/10 text-slate-300 hover:text-white"
+        }`}
       >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
         </svg>
-        New URL
+        <span>Change URL / Search</span>
       </button>
 
-      <div className="rounded-2xl border border-gray-700/50 bg-gray-800/50 backdrop-blur overflow-hidden">
+      <div
+        className={`rounded-[28px] overflow-hidden border transition-all ${
+          isLight
+            ? "bg-white border-[#E2E8F0] shadow-[0_12px_32px_rgba(35,55,110,0.08)]"
+            : "bg-[#161C2E] border-white/10 shadow-[0_16px_36px_rgba(0,0,0,0.4)]"
+        }`}
+      >
         {/* Header */}
-        <div className="p-5 border-b border-gray-700/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="p-5 sm:p-6 border-b border-black/5 dark:border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-white">{info.title}</h2>
-            {info.uploader && <p className="text-gray-400 text-sm mt-0.5">{info.uploader}</p>}
-            <p className="text-gray-500 text-sm mt-1">{info.video_count} videos</p>
+            <h2
+              className={`text-lg sm:text-xl font-black ${isLight ? "text-[#1A1F2C]" : "text-white"}`}
+              style={{ fontFamily: "var(--font-quicksand), sans-serif" }}
+            >
+              {info.title}
+            </h2>
+            {info.uploader && <p className="text-[#8E99AE] text-xs font-semibold mt-0.5">{info.uploader}</p>}
+            <p className="text-xs text-[#8E99AE] mt-1">{info.video_count} videos in playlist</p>
           </div>
           {onPlayPlaylist && (
             <button
               onClick={() => onPlayPlaylist(info.videos, 0)}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs flex items-center gap-2 shadow-lg shadow-emerald-950/40 active:scale-95 transition-all self-start sm:self-auto"
+              className="px-4 py-2.5 rounded-full text-white font-bold text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all self-start sm:self-auto"
+              style={{ backgroundColor: config.primaryHex }}
             >
               <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
                 <path d="M8 5v14l11-7z" />
@@ -121,7 +137,13 @@ export function PlaylistVideoList({
         </div>
 
         {/* Selection controls */}
-        <div className="px-5 py-3 flex items-center justify-between border-b border-gray-700/30 bg-gray-900/30">
+        <div
+          className={`px-5 sm:px-6 py-3 flex items-center justify-between border-b ${
+            isLight
+              ? "bg-[#F3F5FA] border-[#E2E8F0]"
+              : "bg-black/20 border-white/10"
+          }`}
+        >
           <label
             htmlFor={`${id}-select-all`}
             className="flex items-center gap-2.5 cursor-pointer select-none"
@@ -134,44 +156,53 @@ export function PlaylistVideoList({
                 if (el) el.indeterminate = !allSelected && !noneSelected;
               }}
               onChange={toggleAll}
-              className="w-4 h-4 rounded accent-red-500"
+              className="w-4 h-4 rounded accent-[#2B4C8F]"
             />
-            <span className="text-sm text-gray-300 font-medium">
+            <span className={`text-xs font-bold ${isLight ? "text-slate-700" : "text-slate-300"}`}>
               {allSelected ? "Deselect All" : "Select All"}
             </span>
           </label>
-          <span className="text-xs text-gray-500">
+          <span className="text-xs font-mono text-[#8E99AE]">
             {selectedIds.length} / {info.videos.length} selected
           </span>
         </div>
 
         {/* Video list */}
-        <div className="divide-y divide-gray-700/30 max-h-80 overflow-y-auto">
+        <div className="divide-y divide-black/5 dark:divide-white/10 max-h-80 overflow-y-auto scrollbar-none">
           {info.videos.map((video) => {
             const isSelected = selectedIds.includes(video.video_id);
             return (
               <label
                 key={video.video_id}
                 htmlFor={`${id}-video-${video.video_id}`}
-                className={`flex items-center gap-3 px-5 py-3 cursor-pointer transition-colors
-                  ${isSelected ? "bg-red-500/5 hover:bg-red-500/10" : "hover:bg-gray-700/30"}`}
+                className={`flex items-center gap-3 px-5 sm:px-6 py-3 cursor-pointer transition-colors ${
+                  isSelected
+                    ? isLight
+                      ? "bg-[#E6ECF8]/50"
+                      : "bg-white/10"
+                    : isLight
+                    ? "hover:bg-slate-50"
+                    : "hover:bg-white/5"
+                }`}
               >
                 <input
                   id={`${id}-video-${video.video_id}`}
                   type="checkbox"
                   checked={isSelected}
                   onChange={() => toggleVideo(video.video_id)}
-                  className="w-4 h-4 rounded accent-red-500 shrink-0"
+                  className="w-4 h-4 rounded accent-[#2B4C8F] shrink-0"
                 />
                 {video.thumbnail && (
                   <img
                     src={video.thumbnail}
                     alt=""
-                    className="w-12 h-8 object-cover rounded shrink-0 bg-gray-700"
+                    className="w-12 h-9 object-cover rounded-[10px] shrink-0 bg-slate-900 shadow-sm"
                   />
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white font-medium truncate">{video.title}</p>
+                  <p className={`text-xs sm:text-sm font-bold truncate ${isLight ? "text-slate-800" : "text-white"}`}>
+                    {video.title}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {onPlayTrack && (
@@ -182,7 +213,7 @@ export function PlaylistVideoList({
                         e.stopPropagation();
                         onPlayTrack(video);
                       }}
-                      className="p-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-white transition-colors"
+                      className="p-1.5 rounded-full bg-black/5 dark:bg-white/10 hover:scale-105 text-[#2B4C8F] dark:text-[#6C95FF] transition-all"
                       title="Stream this track"
                     >
                       <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
@@ -191,7 +222,7 @@ export function PlaylistVideoList({
                     </button>
                   )}
                   {video.duration && (
-                    <span className="text-xs text-gray-500 font-mono">
+                    <span className="text-[11px] text-[#8E99AE] font-mono">
                       {formatDuration(video.duration)}
                     </span>
                   )}
@@ -202,21 +233,26 @@ export function PlaylistVideoList({
         </div>
 
         {/* Download settings */}
-        <div className="p-5 border-t border-gray-700/50 space-y-4">
+        <div className="p-5 sm:p-6 border-t border-black/5 dark:border-white/10 space-y-4">
           {/* Mode toggle */}
-          <div className="flex rounded-xl overflow-hidden border border-gray-700 w-fit">
+          <div
+            className={`flex rounded-full p-1 border w-full sm:w-fit ${
+              isLight ? "bg-[#F3F5FA] border-[#E2E8F0]" : "bg-black/20 border-white/10"
+            }`}
+          >
             {(["video", "audio"] as DownloadMode[]).map((m) => (
               <button
                 key={m}
                 id={`${id}-mode-${m}`}
                 onClick={() => setMode(m)}
-                className={`px-5 py-2 text-sm font-medium capitalize transition-colors ${
+                className={`px-5 py-1.5 text-xs font-bold rounded-full transition-all ${
                   mode === m
-                    ? "bg-gradient-to-r from-red-500 to-orange-500 text-white"
-                    : "bg-transparent text-gray-400 hover:text-white"
+                    ? "text-white shadow-sm"
+                    : "text-[#8E99AE] hover:text-[#1A1F2C] dark:hover:text-[#EAF0FF]"
                 }`}
+                style={mode === m ? { backgroundColor: config.primaryHex } : undefined}
               >
-                {m === "video" ? "🎬 Video" : "🎵 Audio"}
+                {m === "video" ? "🎬 Video (MP4)" : "🎵 Audio (MP3)"}
               </button>
             ))}
           </div>
@@ -232,26 +268,21 @@ export function PlaylistVideoList({
             onAudioSelect={setAudioQualityId}
           />
 
-          <p className="text-xs text-gray-500">
-            Quality is applied to all selected videos. Individual videos may fall back to the next available quality.
+          <p className="text-xs text-[#8E99AE]">
+            Quality is applied uniformly across selected tracks. Tracks lacking higher formats automatically select best available.
           </p>
 
           <button
             id={`${id}-download-btn`}
             onClick={handleDownload}
             disabled={noneSelected}
-            className="w-full py-3.5 rounded-xl font-semibold text-white
-              bg-gradient-to-r from-red-500 to-orange-500
-              hover:from-red-400 hover:to-orange-400
-              disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed
-              shadow-lg shadow-red-500/20 hover:shadow-red-400/30
-              transition-all duration-200 active:scale-[0.98]
-              flex items-center justify-center gap-2"
+            className="w-full py-3.5 rounded-full font-bold text-xs sm:text-sm text-white shadow-md hover:shadow-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2"
+            style={{ backgroundColor: config.primaryHex }}
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
-            Download {selectedIds.length} Video{selectedIds.length !== 1 ? "s" : ""}
+            Download {selectedIds.length} Track{selectedIds.length !== 1 ? "s" : ""}
           </button>
         </div>
       </div>

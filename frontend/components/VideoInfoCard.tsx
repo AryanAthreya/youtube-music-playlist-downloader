@@ -4,6 +4,7 @@ import { useState } from "react";
 import { QualitySelector } from "./QualitySelector";
 import type { VideoInfoResponse, DownloadRequest, DownloadMode } from "@/lib/types";
 import { formatFileSize } from "@/lib/websocket";
+import { useTheme } from "../context/ThemeContext";
 
 interface VideoInfoCardProps {
   id: string;
@@ -23,6 +24,9 @@ function formatDuration(seconds: number | null): string {
 }
 
 export function VideoInfoCard({ id, info, onDownload, onReset, onPlayTrack }: VideoInfoCardProps) {
+  const { config, theme } = useTheme();
+  const isLight = config.isLight || theme === "soft-light";
+
   const [mode, setMode] = useState<DownloadMode>("video");
   const [selectedQualityId, setSelectedQualityId] = useState<string>(
     info.formats[0]?.format_id ?? ""
@@ -44,24 +48,34 @@ export function VideoInfoCard({ id, info, onDownload, onReset, onPlayTrack }: Vi
   const estimatedSize = selectedFormat?.filesize ?? selectedFormat?.filesize_approx;
 
   return (
-    <div id={id} className="space-y-3">
+    <div id={id} className="space-y-4 animate-in fade-in duration-300">
       {/* Back button */}
       <button
         onClick={onReset}
-        className="inline-flex items-center gap-1.5 text-gray-400 hover:text-white text-xs sm:text-sm font-medium transition-colors"
+        className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold border transition-all active:scale-95 ${
+          isLight
+            ? "bg-white border-[#E2E8F0] text-slate-600 hover:text-slate-900 shadow-sm"
+            : "bg-white/5 border-white/10 text-slate-300 hover:text-white"
+        }`}
       >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
         </svg>
-        <span>Change URL / Back</span>
+        <span>Change URL / Search</span>
       </button>
 
       {/* Video card */}
-      <div className="glass-panel rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
-        <div className="flex flex-col md:flex-row">
-          {/* Thumbnail column */}
+      <div
+        className={`rounded-[28px] overflow-hidden border p-5 sm:p-6 transition-all ${
+          isLight
+            ? "bg-white border-[#E2E8F0] shadow-[0_12px_32px_rgba(35,55,110,0.08)]"
+            : "bg-[#161C2E] border-white/10 shadow-[0_16px_36px_rgba(0,0,0,0.4)]"
+        }`}
+      >
+        <div className="flex flex-col md:flex-row gap-5 sm:gap-6">
+          {/* Thumbnail column with squircle container */}
           {info.thumbnail && (
-            <div className="md:w-5/12 relative aspect-video md:aspect-auto bg-slate-950 overflow-hidden shrink-0">
+            <div className="md:w-5/12 relative aspect-video md:aspect-[4/3] rounded-[22px] overflow-hidden bg-slate-950 shrink-0 shadow-md">
               <img
                 src={info.thumbnail}
                 alt={info.title}
@@ -69,7 +83,7 @@ export function VideoInfoCard({ id, info, onDownload, onReset, onPlayTrack }: Vi
               />
               {/* Duration badge */}
               {info.duration && (
-                <div className="absolute bottom-2.5 right-2.5 bg-black/85 backdrop-blur-sm text-white text-[11px] font-mono px-2 py-0.5 rounded-md border border-white/10">
+                <div className="absolute bottom-2.5 right-2.5 bg-black/80 backdrop-blur-md text-white text-[11px] font-mono px-2 py-0.5 rounded-full border border-white/10 shadow-sm">
                   {formatDuration(info.duration)}
                 </div>
               )}
@@ -77,43 +91,61 @@ export function VideoInfoCard({ id, info, onDownload, onReset, onPlayTrack }: Vi
           )}
 
           {/* Info column */}
-          <div className="p-4 sm:p-6 flex-1 flex flex-col justify-between space-y-4">
+          <div className="flex-1 flex flex-col justify-between space-y-4">
             <div>
-              <h2 className="text-base sm:text-lg font-bold text-white leading-snug line-clamp-2">
+              <h2
+                className={`text-base sm:text-lg font-black leading-snug line-clamp-2 ${
+                  isLight ? "text-[#1A1F2C]" : "text-white"
+                }`}
+                style={{ fontFamily: "var(--font-quicksand), sans-serif" }}
+              >
                 {info.title}
               </h2>
               {info.uploader && (
-                <p className="text-gray-400 text-xs sm:text-sm mt-1 font-medium">{info.uploader}</p>
+                <p className="text-[#8E99AE] text-xs sm:text-sm mt-1 font-semibold">{info.uploader}</p>
               )}
 
               {/* Stats row */}
-              <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-gray-400 mt-2">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-[#8E99AE] mt-2.5">
                 {info.view_count && (
-                  <span className="bg-white/5 px-2 py-0.5 rounded border border-white/5">
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full border font-mono ${
+                      isLight ? "bg-[#F3F5FA] border-[#E2E8F0]" : "bg-white/5 border-white/5"
+                    }`}
+                  >
                     {info.view_count.toLocaleString()} views
                   </span>
                 )}
                 {info.upload_date && (
-                  <span className="bg-white/5 px-2 py-0.5 rounded border border-white/5">
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full border font-mono ${
+                      isLight ? "bg-[#F3F5FA] border-[#E2E8F0]" : "bg-white/5 border-white/5"
+                    }`}
+                  >
                     {info.upload_date.slice(0, 4)}-{info.upload_date.slice(4, 6)}-{info.upload_date.slice(6, 8)}
                   </span>
                 )}
               </div>
             </div>
 
-            <div className="space-y-3 pt-2 border-t border-white/[0.06]">
+            <div className="space-y-3.5 pt-3 border-t border-black/5 dark:border-white/10">
               {/* Mode toggle */}
-              <div className="flex rounded-xl p-1 bg-slate-900/80 border border-white/10 w-full sm:w-fit">
+              <div
+                className={`flex rounded-full p-1 border w-full sm:w-fit ${
+                  isLight ? "bg-[#F3F5FA] border-[#E2E8F0]" : "bg-black/20 border-white/10"
+                }`}
+              >
                 {(["video", "audio"] as DownloadMode[]).map((m) => (
                   <button
                     key={m}
                     id={`${id}-mode-${m}`}
                     onClick={() => setMode(m)}
-                    className={`flex-1 sm:flex-initial px-5 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition-all ${
+                    className={`flex-1 sm:flex-initial px-5 py-1.5 text-xs font-bold rounded-full transition-all ${
                       mode === m
-                        ? "bg-gradient-to-r from-red-600 to-indigo-600 text-white shadow-sm"
-                        : "text-gray-400 hover:text-white"
+                        ? "text-white shadow-sm"
+                        : "text-[#8E99AE] hover:text-[#1A1F2C] dark:hover:text-[#EAF0FF]"
                     }`}
+                    style={mode === m ? { backgroundColor: config.primaryHex } : undefined}
                   >
                     {m === "video" ? "🎬 Video (MP4)" : "🎵 Audio (MP3)"}
                   </button>
@@ -134,23 +166,24 @@ export function VideoInfoCard({ id, info, onDownload, onReset, onPlayTrack }: Vi
 
               {/* Estimated size */}
               {estimatedSize && (
-                <p className="text-xs text-gray-400 font-mono">
-                  Estimated size: <span className="text-gray-200 font-medium">{formatFileSize(estimatedSize)}</span>
+                <p className="text-xs text-[#8E99AE] font-mono">
+                  Estimated size: <span className={`font-bold ${isLight ? "text-slate-800" : "text-slate-200"}`}>{formatFileSize(estimatedSize)}</span>
                 </p>
               )}
 
               {/* Action buttons */}
-              <div className="flex flex-col sm:flex-row gap-2 pt-1">
+              <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
                 {onPlayTrack && (
                   <button
                     type="button"
                     onClick={() => onPlayTrack(info)}
-                    className="flex-1 py-3 sm:py-3.5 rounded-xl font-bold text-sm sm:text-base text-white
-                      bg-white/10 hover:bg-white/20 border border-white/15
-                      transition-all duration-200 active:scale-[0.98]
-                      flex items-center justify-center gap-2"
+                    className={`flex-1 py-3 rounded-full font-bold text-xs sm:text-sm border transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2 ${
+                      isLight
+                        ? "bg-[#F3F5FA] hover:bg-[#E6ECF8] border-[#E2E8F0] text-[#2B4C8F]"
+                        : "bg-white/10 hover:bg-white/15 border-white/15 text-white"
+                    }`}
                   >
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-400" fill="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
                       <path d="M8 5v14l11-7z" />
                     </svg>
                     <span>Stream Audio</span>
@@ -160,15 +193,10 @@ export function VideoInfoCard({ id, info, onDownload, onReset, onPlayTrack }: Vi
                   id={`${id}-download-btn`}
                   onClick={handleDownload}
                   disabled={!selectedQualityId && !selectedAudioId}
-                  className={`${onPlayTrack ? "flex-[1.5]" : "w-full"} py-3 sm:py-3.5 rounded-xl font-bold text-sm sm:text-base text-white
-                    bg-gradient-to-r from-red-600 via-rose-600 to-indigo-600
-                    hover:from-red-500 hover:to-indigo-500
-                    disabled:from-slate-800 disabled:to-slate-800 disabled:text-gray-500 disabled:cursor-not-allowed
-                    shadow-lg shadow-red-600/20 hover:shadow-indigo-500/25
-                    transition-all duration-200 active:scale-[0.98]
-                    flex items-center justify-center gap-2`}
+                  className={`${onPlayTrack ? "flex-[1.5]" : "w-full"} py-3 rounded-full font-bold text-xs sm:text-sm text-white shadow-md hover:shadow-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2`}
+                  style={{ backgroundColor: config.primaryHex }}
                 >
-                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
                   <span>Download {mode === "video" ? "Video (MP4)" : "Audio (MP3)"}</span>
