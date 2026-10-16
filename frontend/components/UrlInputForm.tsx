@@ -13,7 +13,8 @@ const YOUTUBE_URL_REGEX =
   /^https?:\/\/(www\.|music\.)?youtube\.com\/(watch\?.*v=|playlist\?.*list=|shorts\/|embed\/)|^https?:\/\/youtu\.be\//;
 
 export function UrlInputForm({ id, onSubmit, loading }: UrlInputFormProps) {
-  const { config } = useTheme();
+  const { config, theme } = useTheme();
+  const isLight = config.isLight || theme === "soft-light";
   const [inputVal, setInputVal] = useState("");
   const [clientError, setClientError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -25,7 +26,7 @@ export function UrlInputForm({ id, onSubmit, loading }: UrlInputFormProps) {
       e.preventDefault();
       const trimmed = inputVal.trim();
       if (!trimmed) {
-        setClientError("Please enter a YouTube URL or search query.");
+        setClientError("Please enter a YouTube link or track title.");
         inputRef.current?.focus();
         return;
       }
@@ -52,25 +53,35 @@ export function UrlInputForm({ id, onSubmit, loading }: UrlInputFormProps) {
     <form
       id={id}
       onSubmit={handleSubmit}
-      className="space-y-3"
-      aria-label="YouTube URL or search form"
+      className="space-y-2.5 w-full"
+      aria-label="Search and download music form"
     >
-      <div className="flex flex-col sm:flex-row items-stretch gap-2.5">
-        {/* Input Wrapper */}
-        <div className="relative flex-1">
-          {/* Icon */}
-          <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: config.primaryHex }}>
+      <div className="relative flex items-center w-full">
+        {/* Soft Neumorphic Pill Input Container */}
+        <div
+          className={`relative flex items-center w-full rounded-full transition-all duration-200 border ${
+            clientError
+              ? "border-red-400 ring-2 ring-red-400/20"
+              : isLight
+              ? "bg-[#F8FAFC] border-[#E2E8F0] shadow-[inset_0_2px_5px_rgba(35,55,110,0.06)] focus-within:border-[#2B4C8F] focus-within:ring-2 focus-within:ring-[#2B4C8F]/15"
+              : "bg-[#161C2E] border-white/10 shadow-[inset_0_2px_5px_rgba(0,0,0,0.35)] focus-within:border-[#6C95FF] focus-within:ring-2 focus-within:ring-[#6C95FF]/20"
+          }`}
+        >
+          {/* Leading Search / Music Icon */}
+          <div className="pl-4 pr-1 text-[#9AA3B5] shrink-0 pointer-events-none">
             {isUrl ? (
-              <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-red-500">
                 <path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z" />
               </svg>
             ) : (
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <circle cx="11" cy="11" r="7" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" />
               </svg>
             )}
           </div>
 
+          {/* Text Input */}
           <input
             ref={inputRef}
             id={`${id}-input`}
@@ -80,128 +91,99 @@ export function UrlInputForm({ id, onSubmit, loading }: UrlInputFormProps) {
               setInputVal(e.target.value);
               if (clientError) setClientError(null);
             }}
-            placeholder="Paste YouTube link or type keywords to search..."
+            placeholder="Search music, album or paste link..."
             disabled={loading}
-            className={`w-full pl-11 pr-16 sm:pr-20 py-3.5 sm:py-4 rounded-2xl text-white placeholder-gray-500 text-sm sm:text-base
-              bg-slate-900/80 glass-card transition-all duration-200 outline-none
-              ${
-                clientError
-                  ? "border-red-500/80 focus:border-red-400 focus:ring-2 focus:ring-red-400/20"
-                  : "border-white/10"
-              }
-              ${loading ? "opacity-60 cursor-not-allowed" : ""}
-            `}
-            style={
-              !clientError
-                ? {
-                    // Dynamic focus ring via box-shadow trick (can't use CSS vars in Tailwind focus:)
-                    borderColor: undefined,
-                  }
-                : undefined
-            }
-            onFocus={(e) => {
-              if (!clientError) {
-                e.currentTarget.style.borderColor = `${config.primaryHex}99`;
-                e.currentTarget.style.boxShadow = `0 0 0 3px ${config.primaryHex}25`;
-              }
-            }}
-            onBlur={(e) => {
-              e.currentTarget.style.borderColor = "";
-              e.currentTarget.style.boxShadow = "";
-            }}
-            aria-invalid={!!clientError}
-            aria-describedby={clientError ? `${id}-error` : undefined}
+            className={`w-full py-3.5 pl-2 pr-24 rounded-full text-sm sm:text-base outline-none bg-transparent transition-colors font-medium ${
+              isLight ? "text-[#1A1F2C] placeholder-[#9AA3B5]" : "text-[#EAF0FF] placeholder-[#7F8AA6]"
+            } ${loading ? "opacity-60 cursor-not-allowed" : ""}`}
             autoComplete="off"
             spellCheck={false}
           />
 
-          {/* Quick Clear or Paste button */}
-          {!loading && inputVal ? (
-            <button
-              type="button"
-              onClick={() => {
-                setInputVal("");
-                setClientError(null);
-                inputRef.current?.focus();
-              }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors text-xs"
-              title="Clear input"
-            >
-              ✕
-            </button>
-          ) : !loading ? (
-            <button
-              type="button"
-              onClick={handlePaste}
-              className="absolute right-3 top-1/2 -translate-y-1/2 px-2 py-1 text-xs font-medium text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 transition-all"
-              title="Paste from clipboard"
-            >
-              Paste
-            </button>
-          ) : null}
-        </div>
+          {/* Action buttons inside pill on the right */}
+          <div className="absolute right-1.5 flex items-center gap-1">
+            {!loading && inputVal ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setInputVal("");
+                  setClientError(null);
+                  inputRef.current?.focus();
+                }}
+                className={`p-1.5 rounded-full transition-colors ${
+                  isLight ? "text-slate-400 hover:text-slate-700 hover:bg-slate-200" : "text-gray-400 hover:text-white hover:bg-white/10"
+                }`}
+                title="Clear input"
+              >
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            ) : !loading ? (
+              <button
+                type="button"
+                onClick={handlePaste}
+                className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all active:scale-95 ${
+                  isLight
+                    ? "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 shadow-sm"
+                    : "bg-[#1E263D] text-slate-300 border-white/10 hover:text-white hover:bg-[#25304C]"
+                }`}
+                title="Paste from clipboard"
+              >
+                Paste
+              </button>
+            ) : null}
 
-        {/* Submit Button — fully themed */}
-        <button
-          type="submit"
-          id={`${id}-submit`}
-          disabled={loading}
-          className="flex items-center justify-center gap-2 px-6 py-3.5 sm:py-4 rounded-2xl font-semibold text-sm sm:text-base shrink-0 transition-all duration-200 active:scale-95"
-          style={
-            loading
-              ? { background: "rgba(30, 41, 59, 0.8)", color: "#9ca3af", border: "1px solid rgba(255,255,255,0.05)" }
-              : {
-                  background: `linear-gradient(135deg, ${config.primaryHex} 0%, ${config.secondaryHex} 100%)`,
-                  color: "#fff",
-                  boxShadow: `0 8px 20px -4px ${config.glow}`,
-                }
-          }
-        >
-          {loading ? (
-            <>
-              <svg className="animate-spin w-4 h-4 text-white" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-              </svg>
-              <span>{isUrl ? "Analyzing…" : "Searching…"}</span>
-            </>
-          ) : isUrl ? (
-            <>
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              <span>Fetch Formats</span>
-            </>
-          ) : (
-            <>
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <span>Search YouTube</span>
-            </>
-          )}
-        </button>
+            {/* Circular Submit Button inside pill */}
+            <button
+              type="submit"
+              id={`${id}-submit`}
+              disabled={loading}
+              className="w-9 h-9 rounded-full flex items-center justify-center text-white transition-all shadow-md active:scale-90 disabled:opacity-50 shrink-0"
+              style={{
+                backgroundColor: config.primaryHex,
+                boxShadow: `0 4px 12px ${config.glow}`,
+              }}
+              title={isUrl ? "Analyze Link" : "Search YouTube"}
+              aria-label={isUrl ? "Analyze YouTube Link" : "Search YouTube"}
+            >
+              {loading ? (
+                <svg className="animate-spin w-4 h-4 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                </svg>
+              ) : isUrl ? (
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <circle cx="11" cy="11" r="7" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" />
+                </svg>
+              )}
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Client error */}
+      {/* Error feedback */}
       {clientError && (
-        <p id={`${id}-error`} className="text-red-400 text-xs sm:text-sm pl-1 flex items-center gap-1.5" role="alert">
-          <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        <p id={`${id}-error`} className="text-red-500 dark:text-red-400 text-xs pl-3 flex items-center gap-1.5 animate-in fade-in duration-200" role="alert">
+          <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <circle cx="12" cy="12" r="10" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01" />
           </svg>
           <span>{clientError}</span>
         </p>
       )}
 
-      {/* Loading indicator */}
+      {/* Loading status */}
       {loading && (
-        <p className="text-xs sm:text-sm pl-1 animate-pulse flex items-center gap-2" style={{ color: config.primaryHex }}>
-          <span
-            className="inline-block w-2 h-2 rounded-full animate-ping"
-            style={{ backgroundColor: config.primaryHex }}
-          />
-          <span>{isUrl ? "Analyzing formats and audio qualities…" : "Searching YouTube for top 15 matches…"}</span>
-        </p>
+        <div className="flex items-center gap-2 pl-3 text-xs animate-pulse" style={{ color: config.primaryHex }}>
+          <span className="w-2 h-2 rounded-full animate-ping" style={{ backgroundColor: config.primaryHex }} />
+          <span>{isUrl ? "Analyzing YouTube formats & audio qualities…" : "Searching YouTube for top matches…"}</span>
+        </div>
       )}
     </form>
   );
